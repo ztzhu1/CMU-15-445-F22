@@ -3,6 +3,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # For clang-tidy.
 set(BUILD_SHARED_LIBS OFF)              # We expect external libraries to be linked statically.
 set(CMAKE_CXX_STANDARD 17)              # Compile as C++17.
 set(CMAKE_CXX_STANDARD_REQUIRED ON)     # Require C++17 support.
+set(CMAKE_C_COMPILER "/usr/lib/ccache//clang-14")
+set(CMAKE_CXX_COMPILER "/usr/lib/ccache//clang++-14")
 
 project(BusTub
         VERSION 2022.8
@@ -58,7 +60,7 @@ enable_testing()
 
 # attempt to find the binary if user did not specify
 find_program(CLANG_FORMAT_BIN
-        NAMES clang-format clang-format-12
+        NAMES clang-format clang-format-14
         HINTS ${BUSTUB_CLANG_SEARCH_PATH})
 
 if ("${CLANG_FORMAT_BIN}" STREQUAL "CLANG_FORMAT_BIN-NOTFOUND")
@@ -69,7 +71,7 @@ endif ()
 
 # attempt to find the binary if user did not specify
 find_program(CLANG_TIDY_BIN
-        NAMES clang-tidy clang-tidy-12
+        NAMES clang-tidy clang-tidy-14
         HINTS ${BUSTUB_CLANG_SEARCH_PATH})
 
 if ("${CLANG_TIDY_BIN}" STREQUAL "CLANG_TIDY_BIN-NOTFOUND")
@@ -82,7 +84,7 @@ endif ()
 
 
 find_program(CLANG_APPLY_REPLACEMENTS_BIN
-        NAMES clang-apply-replacements clang-apply-replacements-12
+        NAMES clang-apply-replacements clang-apply-replacements-14
         HINTS ${BUSTUB_CLANG_SEARCH_PATH})
 
 if ("${CLANG_APPLY_REPLACEMENTS_BIN}" STREQUAL "CLANG_APPLY_REPLACEMENTS_BIN-NOTFOUND")
