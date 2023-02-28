@@ -10,7 +10,29 @@
 
 namespace bustub {
 
-TEST(ExtendibleHashTableTest, DISABLED_SampleTest) {
+void DebugTable(std::shared_ptr<ExtendibleHashTable<int, std::string>> table) {
+  printf("global depth: %d\nbucket num: %d\n", table->GetGlobalDepth(), table->GetNumBuckets());
+  for (int i = 0; i < table->GetNumBuckets(); i++) {
+    printf("bucket %d depth: %d, size: %lu\n", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
+  }
+  printf("\n");
+}
+
+TEST(ExtendibleHashTableTest, DISABLED_MyTest) {
+  auto table = std::make_shared<ExtendibleHashTable<int, std::string>>(2);
+
+  DebugTable(table);
+  table->Insert(1, "a");
+  DebugTable(table);
+  table->Insert(2, "b");
+  DebugTable(table);
+  table->Insert(3, "c");
+  DebugTable(table);
+  table->Insert(4, "d");
+  DebugTable(table);
+}
+
+TEST(ExtendibleHashTableTest, SampleTest) {
   auto table = std::make_unique<ExtendibleHashTable<int, std::string>>(2);
 
   table->Insert(1, "a");
@@ -42,7 +64,7 @@ TEST(ExtendibleHashTableTest, DISABLED_SampleTest) {
   EXPECT_FALSE(table->Remove(20));
 }
 
-TEST(ExtendibleHashTableTest, DISABLED_ConcurrentInsertTest) {
+TEST(ExtendibleHashTableTest, ConcurrentInsertTest) {
   const int num_runs = 50;
   const int num_threads = 3;
 
