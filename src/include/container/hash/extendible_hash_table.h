@@ -157,20 +157,23 @@ class ExtendibleHashTable : public HashTable<K, V> {
      */
     auto Insert(const K &key, const V &value) -> bool;
 
-   private:
+    auto CurrentLocalIndex() -> size_t;
+    auto LocalIndexOf(const K &key) -> size_t;
+
+    //  private:
     // TODO(student): You may add additional private members and helper functions
     size_t size_;
     int depth_;
     std::list<std::pair<K, V>> list_;
   };
 
- private:
+  //  private:
   // TODO(student): You may add additional private members and helper functions and remove the ones
   // you don't need.
 
-  int global_depth_;    // The global depth of the directory
-  size_t bucket_size_;  // The size of a bucket
-  int num_buckets_;     // The number of buckets in the hash table
+  int global_depth_{0};  // The global depth of the directory
+  size_t bucket_size_;   // The size of a bucket
+  int num_buckets_{1};   // The number of buckets in the hash table
   mutable std::mutex latch_;
   std::vector<std::shared_ptr<Bucket>> dir_;  // The directory of the hash table
 
@@ -181,6 +184,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @param bucket The bucket to be redistributed.
    */
   auto RedistributeBucket(std::shared_ptr<Bucket> bucket) -> void;
+
+  inline auto FindBucket(const K &key) -> std::shared_ptr<Bucket> { return dir_[IndexOf(key)]; }
 
   /*****************************************************************
    * Must acquire latch_ first before calling the below functions. *
@@ -196,6 +201,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
   auto GetGlobalDepthInternal() const -> int;
   auto GetLocalDepthInternal(int dir_index) const -> int;
   auto GetNumBucketsInternal() const -> int;
+  // auto GetIndicesCorespondingTo(std::shared_ptr<Bucket> bucket) const -> std::vector<size_t>;
+  auto GetIndicesCorespondingTo(std::shared_ptr<Bucket> bucket) const -> std::vector<size_t>;
 };
 
 }  // namespace bustub
