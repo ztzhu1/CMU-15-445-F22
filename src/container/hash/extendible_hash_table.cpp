@@ -100,7 +100,14 @@ template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
   std::scoped_lock<std::mutex> lock(latch_);
   auto bucket = FindBucket(key);
-  if (bucket->IsFull()) {
+  /* If the key exists or the bucket is not full,
+     we can insert the pair directly.  */
+  if (bucket->Insert(key, value)) {
+    return;
+  }
+
+  /* Otherwise the bucket must be full. */
+  while (bucket->IsFull()) {
     RedistributeBucket(bucket);
     bucket = FindBucket(key);
   }
@@ -140,8 +147,8 @@ auto ExtendibleHashTable<K, V>::RedistributeBucket(std::shared_ptr<Bucket> bucke
         it++;
       }
     }
-    // update dir_
-    std::vector<size_t> indices_to_be_updated = GetIndicesCorespondingTo(bucket);
+    // update `dir_`
+    std::vector<size_t> indices_to_be_updated = GetIndicesCorespondingTo(bucket->IsEmpty() ? new_bucket : bucket);
     for (const auto index : indices_to_be_updated) {
       dir_[index] = new_bucket;
     }
@@ -186,15 +193,18 @@ auto ExtendibleHashTable<K, V>::Bucket::Remove(const K &key) -> bool {
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::Insert(const K &key, const V &value) -> bool {
-  if (IsFull()) {
-    return false;
-  }
+  /* If the key exists, update the value. */
   for (auto &pair : list_) {
     if (pair.first == key) {
       pair.second = value;
       return true;
     }
   }
+  /* If the bucket full, waiting for redistributing. */
+  if (IsFull()) {
+    return false;
+  }
+  /* Otherwise we can insert the pair. */
   list_.push_back(std::make_pair(key, value));
   return true;
 }
