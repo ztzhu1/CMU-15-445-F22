@@ -10,27 +10,35 @@
 
 namespace bustub {
 
-void DebugTable(std::shared_ptr<ExtendibleHashTable<int, std::string>> table) {
-  printf("global depth: %d\nbucket num: %d\n", table->GetGlobalDepth(), table->GetNumBuckets());
-  for (int i = 0; i < table->GetNumBuckets(); i++) {
-    printf("bucket %d depth: %d, size: %lu\n", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
-  }
-  printf("\n");
-}
+// void DebugTable(std::shared_ptr<ExtendibleHashTable<int, int>> table) {
+//   printf("global depth: %d\nbucket num: %d\n", table->GetGlobalDepth(), table->GetNumBuckets());
+//   for (int i = 0; i < table->GetNumBuckets(); i++) {
+//     printf("bucket %d depth: %d, size: %lu\n", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
+//   }
+//   printf("\n");
+// }
 
-TEST(ExtendibleHashTableTest, DISABLED_MyTest) {
-  auto table = std::make_shared<ExtendibleHashTable<int, std::string>>(2);
+// TEST(ExtendibleHashTableTest, DISABLED_MyTest) {
+//   auto table = std::make_shared<ExtendibleHashTable<int, int>>(2);
 
-  DebugTable(table);
-  table->Insert(1, "a");
-  DebugTable(table);
-  table->Insert(2, "b");
-  DebugTable(table);
-  table->Insert(3, "c");
-  DebugTable(table);
-  table->Insert(4, "d");
-  DebugTable(table);
-}
+//   DebugTable(table);
+//   table->Insert(0, 0);
+//   DebugTable(table);
+//   table->Insert(2, 2);
+//   DebugTable(table);
+//   table->Insert(1, 1);
+//   DebugTable(table);
+
+//   for (int i = 0; i < 100; i++) {
+//     std::thread t1([&table]() { table->Insert(1, 1); });
+//     std::thread t0([&table]() { table->Insert(0, 0); });
+//     std::thread t2([&table]() { table->Insert(2, 2); });
+//     t0.join();
+//     t1.join();
+//     t2.join();
+//     EXPECT_EQ(table->GetGlobalDepth(), 1);
+//   }
+// }
 
 TEST(ExtendibleHashTableTest, SampleTest) {
   auto table = std::make_unique<ExtendibleHashTable<int, std::string>>(2);

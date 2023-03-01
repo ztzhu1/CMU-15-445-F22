@@ -73,6 +73,7 @@ auto ExtendibleHashTable<K, V>::GetIndicesCorespondingTo(std::shared_ptr<Bucket>
   int local_depth = bucket->GetDepth();
   size_t local_mask = MASK(local_depth);
   size_t local_index = bucket->CurrentLocalIndex();
+  local_index |= (1 << (local_depth - 1));
   for (size_t index = 0; index < (1 << global_depth_); index++) {
     if ((index & local_mask) == local_index) {
       indices.push_back(index);
@@ -83,18 +84,21 @@ auto ExtendibleHashTable<K, V>::GetIndicesCorespondingTo(std::shared_ptr<Bucket>
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Find(const K &key, V &value) -> bool {
+  std::scoped_lock<std::mutex> lock(latch_);
   auto bucket = FindBucket(key);
   return bucket->Find(key, value);
 }
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Remove(const K &key) -> bool {
+  std::scoped_lock<std::mutex> lock(latch_);
   auto bucket = FindBucket(key);
   return bucket->Remove(key);
 }
 
 template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
+  std::scoped_lock<std::mutex> lock(latch_);
   auto bucket = FindBucket(key);
   if (bucket->IsFull()) {
     RedistributeBucket(bucket);
@@ -137,7 +141,7 @@ auto ExtendibleHashTable<K, V>::RedistributeBucket(std::shared_ptr<Bucket> bucke
       }
     }
     // update dir_
-    std::vector<size_t> indices_to_be_updated = GetIndicesCorespondingTo(new_bucket);
+    std::vector<size_t> indices_to_be_updated = GetIndicesCorespondingTo(bucket);
     for (const auto index : indices_to_be_updated) {
       dir_[index] = new_bucket;
     }
@@ -197,6 +201,7 @@ auto ExtendibleHashTable<K, V>::Bucket::Insert(const K &key, const V &value) -> 
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::CurrentLocalIndex() -> size_t {
+  assert(list_.size() != 0);
   return LocalIndexOf(list_.front().first);
 }
 

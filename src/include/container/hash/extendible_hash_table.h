@@ -160,14 +160,14 @@ class ExtendibleHashTable : public HashTable<K, V> {
     auto CurrentLocalIndex() -> size_t;
     auto LocalIndexOf(const K &key) -> size_t;
 
-    //  private:
+  //  private:
     // TODO(student): You may add additional private members and helper functions
     size_t size_;
     int depth_;
     std::list<std::pair<K, V>> list_;
   };
 
-  //  private:
+//  private:
   // TODO(student): You may add additional private members and helper functions and remove the ones
   // you don't need.
 
@@ -187,6 +187,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
 
   inline auto FindBucket(const K &key) -> std::shared_ptr<Bucket> { return dir_[IndexOf(key)]; }
 
+  auto GetIndicesCorespondingTo(std::shared_ptr<Bucket> bucket) const -> std::vector<size_t>;
+
   /*****************************************************************
    * Must acquire latch_ first before calling the below functions. *
    *****************************************************************/
@@ -201,8 +203,6 @@ class ExtendibleHashTable : public HashTable<K, V> {
   auto GetGlobalDepthInternal() const -> int;
   auto GetLocalDepthInternal(int dir_index) const -> int;
   auto GetNumBucketsInternal() const -> int;
-  // auto GetIndicesCorespondingTo(std::shared_ptr<Bucket> bucket) const -> std::vector<size_t>;
-  auto GetIndicesCorespondingTo(std::shared_ptr<Bucket> bucket) const -> std::vector<size_t>;
 };
 
 }  // namespace bustub
