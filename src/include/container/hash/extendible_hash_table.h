@@ -160,14 +160,14 @@ class ExtendibleHashTable : public HashTable<K, V> {
     auto CurrentLocalIndex() -> size_t;
     auto LocalIndexOf(const K &key) -> size_t;
 
-  //  private:
+   private:
     // TODO(student): You may add additional private members and helper functions
     size_t size_;
     int depth_;
     std::list<std::pair<K, V>> list_;
   };
 
-//  private:
+ private:
   // TODO(student): You may add additional private members and helper functions and remove the ones
   // you don't need.
 
