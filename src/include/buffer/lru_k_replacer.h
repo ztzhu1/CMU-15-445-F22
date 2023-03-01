@@ -23,6 +23,27 @@
 
 namespace bustub {
 
+using time_stamp_t = size_t;
+
+class LRUKNode {
+ public:
+  explicit LRUKNode(size_t k);
+
+  void RecordAccess(time_stamp_t time_stamp);
+  void SetEvictable(bool evictable) { evictable_ = evictable; }
+  auto Evictable() -> bool { return evictable_; }
+  auto KAccess() -> bool { return history_.size() == k_; }
+  auto EarliestTimeStamp() -> time_stamp_t;
+
+ private:
+  /** History of last seen K timestamps of this page. Least recent timestamp stored in front. */
+  // Remove maybe_unused if you start using them. Feel free to change the member variables as you want.
+
+  std::list<time_stamp_t> history_;
+  size_t k_;
+  bool evictable_{false};
+};
+
 /**
  * LRUKReplacer implements the LRU-k replacement policy.
  *
@@ -102,7 +123,7 @@ class LRUKReplacer {
    * @param frame_id id of frame whose 'evictable' status will be modified
    * @param set_evictable whether the given frame is evictable or not
    */
-  void SetEvictable(frame_id_t frame_id, bool set_evictable);
+  void SetEvictable(frame_id_t frame_id, bool evictable);
 
   /**
    * TODO(P1): Add implementation
@@ -135,11 +156,14 @@ class LRUKReplacer {
  private:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  [[maybe_unused]] size_t current_timestamp_{0};
-  [[maybe_unused]] size_t curr_size_{0};
-  [[maybe_unused]] size_t replacer_size_;
-  [[maybe_unused]] size_t k_;
+  std::unordered_map<frame_id_t, LRUKNode> node_table_;
+  time_stamp_t current_timestamp_{0};
+  size_t curr_size_{0};
+  size_t replacer_size_;
+  size_t k_;
   std::mutex latch_;
+
+  void ExamineFrameIdValid(frame_id_t frame_id);
 };
 
 }  // namespace bustub

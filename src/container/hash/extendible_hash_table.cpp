@@ -201,7 +201,7 @@ auto ExtendibleHashTable<K, V>::Bucket::Insert(const K &key, const V &value) -> 
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::CurrentLocalIndex() -> size_t {
-  assert(list_.size() != 0);
+  assert(!list_.empty());
   return LocalIndexOf(list_.front().first);
 }
 
