@@ -13,7 +13,11 @@ namespace bustub {
 // void DebugTable(std::shared_ptr<ExtendibleHashTable<int, int>> table) {
 //   printf("global depth: %d\nbucket num: %d\n", table->GetGlobalDepth(), table->GetNumBuckets());
 //   for (int i = 0; i < table->GetNumBuckets(); i++) {
-//     printf("bucket %d depth: %d, size: %lu\n", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
+//     printf("bucket %d depth: %d, size: %lu | ", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
+//     for (auto j : table->dir_[i]->list_) {
+//       printf("%d ", j.first);
+//     }
+//     printf("\n");
 //   }
 //   printf("\n");
 // }
@@ -98,4 +102,24 @@ TEST(ExtendibleHashTableTest, ConcurrentInsertTest) {
   }
 }
 
+TEST(ExtendibleHashTableTest, ConcurrentInsertHardTest) {
+  const int num_runs = 50;
+  const int num_threads = 31;
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    auto table = std::make_shared<ExtendibleHashTable<int, int>>(2);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.emplace_back([tid, &table]() { table->Insert(tid * tid, tid); });
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+
+    EXPECT_EQ(table->GetGlobalDepth(), 8);
+  }
+}
 }  // namespace bustub
