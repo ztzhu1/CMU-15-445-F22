@@ -38,6 +38,7 @@ auto LRUKNode::EarliestTimeStamp() -> time_stamp_t {
 LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_frames), k_(k) {}
 
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
+  std::scoped_lock lock(latch_);
   // less than k access
   std::vector<std::pair<frame_id_t, LRUKNode *>> lt_k_access;
   for (auto &[id, node] : node_table_) {
@@ -77,12 +78,14 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
+  std::scoped_lock lock(latch_);
   ExamineFrameIdValid(frame_id);
   const auto [it, inserted] = node_table_.try_emplace(frame_id, k_);
   it->second.RecordAccess(current_timestamp_++);
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool evictable) {
+  std::scoped_lock lock(latch_);
   ExamineFrameIdValid(frame_id);
   auto it = node_table_.find(frame_id);
   if (it == node_table_.end()) {
@@ -98,6 +101,7 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool evictable) {
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) {
+  std::scoped_lock lock(latch_);
   ExamineFrameIdValid(frame_id);
   auto it = node_table_.find(frame_id);
   if (it == node_table_.end()) {
@@ -111,7 +115,10 @@ void LRUKReplacer::Remove(frame_id_t frame_id) {
   }
 }
 
-auto LRUKReplacer::Size() -> size_t { return curr_size_; }
+auto LRUKReplacer::Size() -> size_t {
+  std::scoped_lock lock(latch_);
+  return curr_size_;
+}
 
 void LRUKReplacer::ExamineFrameIdValid(frame_id_t frame_id) {
   //   BUSTUB_ASSERT(frame_id <= replacer_size_, "Invalid frame id!");
