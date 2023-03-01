@@ -11,9 +11,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "buffer/lru_k_replacer.h"
-#include "common/exception.h"
 
 #include <numeric>
+
+#include "common/exception.h"
 
 namespace bustub {
 
