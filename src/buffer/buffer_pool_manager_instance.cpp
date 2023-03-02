@@ -75,7 +75,7 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
   std::scoped_lock lock(latch_);
 
-  assert(page_id != INVALID_PAGE_ID);
+  ExaminePageId(page_id);
 
   frame_id_t frame_id;
   Page *page = FindPage(page_id, frame_id);
@@ -109,7 +109,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 
 auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
   std::scoped_lock lock(latch_);
-  assert(page_id != INVALID_PAGE_ID);
+  ExaminePageId(page_id);
   frame_id_t frame_id;
   Page *page = FindPage(page_id, frame_id);
   if (page == nullptr) {
@@ -130,7 +130,7 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
 auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
   std::scoped_lock lock(latch_);
 
-  assert(page_id != INVALID_PAGE_ID);
+  ExaminePageId(page_id);
 
   frame_id_t frame_id;
   Page *page = FindPage(page_id, frame_id);
@@ -156,7 +156,7 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
 
 auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
   std::scoped_lock lock(latch_);
-  assert(page_id != INVALID_PAGE_ID);
+  ExaminePageId(page_id);
   frame_id_t frame_id;
   Page *page = FindPage(page_id, frame_id);
   if (page == nullptr) {
@@ -188,7 +188,7 @@ void BufferPoolManagerInstance::ResetPageData(Page *page) {
 }
 
 auto BufferPoolManagerInstance::FindPage(page_id_t page_id, frame_id_t &frame_id) -> Page * {
-  assert(page_id != INVALID_PAGE_ID);
+  ExaminePageId(page_id);
   if (!page_table_->Find(page_id, frame_id)) {
     return nullptr;
   }
@@ -217,4 +217,10 @@ auto BufferPoolManagerInstance::FindAvailableFrame(frame_id_t &frame_id) -> bool
   }
   return true;
 }
+
+void BufferPoolManagerInstance::ExaminePageId(page_id_t page_id) {
+  assert(page_id != INVALID_PAGE_ID);
+  assert(page_id < next_page_id_);
+}
+
 }  // namespace bustub

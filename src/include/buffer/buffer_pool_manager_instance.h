@@ -183,5 +183,7 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   auto FindPage(page_id_t page_id, frame_id_t &frame_id) -> Page *;
 
   auto FindAvailableFrame(frame_id_t &frame_id) -> bool;
+
+  void ExaminePageId(page_id_t page_id);
 };
 }  // namespace bustub
