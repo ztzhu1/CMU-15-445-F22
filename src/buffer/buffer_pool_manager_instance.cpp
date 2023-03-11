@@ -77,6 +77,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 
   ExaminePageId(page_id);
 
+  bool in_pool = false;
   frame_id_t frame_id;
   Page *page = FindPage(page_id, frame_id);
   // not found the page in pool
@@ -91,15 +92,14 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
     page = pages_ + frame_id;
     page->page_id_ = page_id;
   } else {  // found the page in pool
-    // Write the data back if needed.
-    if (page->IsDirty()) {
-      disk_manager_->WritePage(page->GetPageId(), page->GetData());
-    }
+    in_pool = true;
   }
   assert(page->GetPageId() == page_id);
   page->pin_count_++;
   // Read the page from disk
-  disk_manager_->ReadPage(page->GetPageId(), page->GetData());
+  if (!in_pool) {
+    disk_manager_->ReadPage(page->GetPageId(), page->GetData());
+  }
   // Maintain replacer
   replacer_->RecordAccess(frame_id);
   replacer_->SetEvictable(frame_id, false);
