@@ -52,8 +52,28 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) { next_pa
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   // replace with your own code
-  assert(static_cast<unsigned long>(index) < LEAF_PAGE_SIZE);
+  assert(index < GetMaxSize());
   return array_[index].first;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::FindKeyIndex(const KeyType &key, int &pos, const KeyComparator &cmp) const -> bool {
+  int size = GetSize();
+  int left = 0;
+  int right = size - 1;
+  pos = (right + left) / 2;
+  while (left <= right) {
+    int cmp_result = cmp(key, (array_ + pos)->first);
+    if (cmp_result < 0) {
+      right = pos - 1;
+    } else if (cmp_result > 0) {
+      left = pos + 1;
+    } else {
+      return true;
+    }
+    pos = (right + left) / 2;
+  }
+  return false;
 }
 
 INDEX_TEMPLATE_ARGUMENTS

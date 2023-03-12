@@ -39,14 +39,14 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   // replace with your own code
-  assert(static_cast<unsigned long>(index) < INTERNAL_PAGE_SIZE);
+  assert(index < GetMaxSize());
   assert(index != 0);
   return array_[index].first;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  assert(static_cast<unsigned long>(index) < INTERNAL_PAGE_SIZE);
+  assert(index < GetMaxSize());
   assert(index != 0);
   array_[index].first = key;
 }
@@ -57,8 +57,58 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
-  assert(static_cast<unsigned long>(index) < INTERNAL_PAGE_SIZE);
+  assert(index < GetMaxSize());
   return array_[index].second;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::UpdateKey(const KeyType &old_key, const KeyType &new_key,
+                                               const KeyComparator &cmp) {
+  int pos = -1;
+  bool found = FindKeyIndex(old_key, pos, cmp);
+  assert(found);
+  if (pos == 0) {
+    return;
+  }
+  (array_ + pos)->first = new_key;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::FindKeyIndex(const KeyType &key, int &pos, const KeyComparator &cmp) const
+    -> bool {
+  if (cmp(key, (array_ + 1)->first) < 0) {
+    pos = 0;
+    return true;
+  }
+  // binary search
+  int left = 1;
+  int right = GetSize() - 1;
+  int mid = (right + left) / 2;
+  while (left <= right) {
+    if (cmp(key, (array_ + mid)->first) < 0) {
+      right = mid - 1;
+    } else if (cmp(key, (array_ + mid)->first) > 0) {
+      left = mid + 1;
+    } else {
+      pos = mid;
+      return true;
+    }
+    mid = (right + left) / 2;
+  }
+  return false;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::FindPointerIndex(const page_id_t page_id) const -> int {
+  int pos = 0;
+  int size = GetSize();
+  for (; pos < size; pos++) {
+    if ((array_ + pos)->second == page_id) {
+      break;
+    }
+  }
+  assert(pos < size);
+  return pos;
 }
 
 INDEX_TEMPLATE_ARGUMENTS

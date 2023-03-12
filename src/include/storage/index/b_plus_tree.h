@@ -77,27 +77,37 @@ class BPlusTree {
   void RemoveFromFile(const std::string &file_name, Transaction *transaction = nullptr);
 
  private:
-  auto FindInsertLeafPos(LeafMappingType *data, int size, const KeyType &key) -> int;
-
-  auto FindInsertInternalPos(InternalMappingType *data, int size, const KeyType &key) -> int;
+  enum class Policy { Unknown, BorrowFromLeft, BorrowFromRight, MergeWithLeft, MergeWithRight };
 
   void InitRootAndInsert(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
 
   auto InsertIntoLeaf(LeafPage *leaf_page, const KeyType &key, const ValueType &value,
                       Transaction *transaction = nullptr) -> bool;
 
-  auto InsertIntoInternal(InternalPage *internal_page, const KeyType &key, const page_id_t value,
-                          Transaction *transaction = nullptr) -> bool;
-
   void SplitLeaf(LeafPage *leaf_page, Transaction *transaction = nullptr);
+
+  auto FindInsertLeafPos(LeafMappingType *data, int size, const KeyType &key) -> int;
+
+  auto InsertIntoInternal(InternalPage *internal_page, KeyType &key, page_id_t value,
+                          Transaction *transaction = nullptr) -> bool;
 
   void SplitInternal(InternalPage *internal_page, Transaction *transaction = nullptr);
 
-  void UpdateRootPageId(int insert_record = 0);
+  auto FindInsertInternalPos(InternalMappingType *data, int size, const KeyType &key) -> int;
+
+  auto RemoveFromInternal(InternalPage *internal_page, int pos, page_id_t *page_id = nullptr) -> bool;
+
+  auto GetPolicy(LeafPage *leaf_page, int pointer_pos) -> Policy;
+
+  auto GetPolicy(InternalPage *internal_page, int pointer_pos) -> Policy;
+
+  auto GetPolicy(BPlusTreePage *bplus_page, int pointer_pos) -> Policy;
 
   auto NewRootPage(page_id_t &root_page_id) -> InternalPage *;
 
   auto FindLeafPage(const KeyType &key, Transaction *transaction = nullptr) -> Page *;
+
+  void UpdateRootPageId(int insert_record = 0);
 
   /* Debug Routines for FREE!! */
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;

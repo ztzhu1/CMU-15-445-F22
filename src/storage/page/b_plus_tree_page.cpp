@@ -18,6 +18,7 @@ namespace bustub {
  * Page type enum class is defined in b_plus_tree_page.h
  */
 auto BPlusTreePage::IsLeafPage() const -> bool { return page_type_ == IndexPageType::LEAF_PAGE; }
+auto BPlusTreePage::IsInternalPage() const -> bool { return page_type_ == IndexPageType::INTERNAL_PAGE; }
 auto BPlusTreePage::IsRootPage() const -> bool { return parent_page_id_ == INVALID_PAGE_ID; }
 void BPlusTreePage::SetPageType(IndexPageType page_type) { page_type_ = page_type; }
 
@@ -29,12 +30,15 @@ auto BPlusTreePage::GetSize() const -> int { return size_; }
 void BPlusTreePage::SetSize(int size) { size_ = size; }
 void BPlusTreePage::IncreaseSize(int amount) { size_ += amount; }
 auto BPlusTreePage::IsFull() const -> bool { return size_ == max_size_; }
+auto BPlusTreePage::MoreThanMin() const -> bool { return size_ > GetMinSize(); }
 
 /*
  * Helper methods to get/set max size (capacity) of the page
  */
 auto BPlusTreePage::GetMaxSize() const -> int { return max_size_; }
 void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
+
+static inline int DivCeil(int a, int b) { return (a + (b - 1)) / b; }
 
 /*
  * Helper method to get min page size
@@ -43,10 +47,22 @@ void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
 auto BPlusTreePage::GetMinSize() const -> int {
   if (IsRootPage()) {
     return IsLeafPage() ? 1 : 2;
-  } else if (IsLeafPage()) {
-    return max_size_ / 2;
-  } else {  // internal page
-    return (max_size_ - 1) / 2 + 1;
+  }
+  if (IsLeafPage()) {
+    return DivCeil(max_size_, 2) - 1;
+  }
+  // internal page
+  return max_size_ / 2;
+}
+
+void BPlusTreePage::SizeAfterSplit(int &left, int &right) const {
+  if (IsLeafPage()) {
+    left = max_size_ / 2;
+    right = max_size_ - left;
+  } else {
+    // internal page
+    left = DivCeil(max_size_, 2);
+    right = max_size_ / 2;
   }
 }
 

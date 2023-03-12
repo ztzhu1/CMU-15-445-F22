@@ -20,6 +20,84 @@
 
 namespace bustub {
 
+void Insert(int64_t key, BPlusTree<GenericKey<8>, RID, GenericComparator<8>> &tree, Transaction *transaction) {
+  GenericKey<8> index_key;
+  RID rid;
+  int64_t value = key & 0xFFFFFFFF;
+  rid.Set(static_cast<int32_t>(key), value);
+  index_key.SetFromInteger(key);
+  tree.Insert(index_key, rid, transaction);
+}
+
+void Remove(int64_t key, BPlusTree<GenericKey<8>, RID, GenericComparator<8>> &tree, Transaction *transaction) {
+  GenericKey<8> index_key;
+  index_key.SetFromInteger(key);
+  tree.Remove(index_key, transaction);
+}
+
+TEST(BPlusTreeTests, InsertTest0) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+
+  auto *disk_manager = new DiskManager("test.db");
+  BufferPoolManager *bpm = new BufferPoolManagerInstance(50, disk_manager);
+  // create b+ tree
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", bpm, comparator, 4, 5);
+  // create transaction
+  auto *transaction = new Transaction(0);
+
+  // create and fetch header_page
+  page_id_t page_id;
+  auto header_page = bpm->NewPage(&page_id);
+  ASSERT_EQ(page_id, HEADER_PAGE_ID);
+  (void)header_page;
+
+  Insert(1, tree, transaction);
+  auto root_page_id = tree.GetRootPageId();
+  auto root_page = reinterpret_cast<BPlusTreePage *>(bpm->FetchPage(root_page_id)->GetData());
+  ASSERT_NE(root_page, nullptr);
+
+  Insert(2, tree, transaction);
+  Insert(3, tree, transaction);
+  Insert(4, tree, transaction);
+  Insert(5, tree, transaction);
+  Insert(6, tree, transaction);
+  Insert(7, tree, transaction);
+  Insert(8, tree, transaction);
+  Insert(9, tree, transaction);
+  Insert(10, tree, transaction);
+  Insert(11, tree, transaction);
+  Insert(12, tree, transaction);
+
+  std::vector<RID> result;
+  GenericKey<8> index_key;
+  index_key.SetFromInteger(9);
+  ASSERT_TRUE(tree.GetValue(index_key, &result, transaction));
+
+  // Remove(7, tree, transaction);
+  // Remove(8, tree, transaction);
+  // Remove(9, tree, transaction);
+  // Remove(10, tree, transaction);
+  Remove(3, tree, transaction);
+  Remove(4, tree, transaction);
+  Remove(5, tree, transaction);
+  Remove(2, tree, transaction);
+  Remove(6, tree, transaction);
+
+  tree.Draw(bpm, "tree.dot");
+
+  tree.Draw(bpm, "tree.dot");
+
+  bpm->UnpinPage(root_page_id, false);
+  bpm->UnpinPage(HEADER_PAGE_ID, true);
+  delete transaction;
+  delete disk_manager;
+  delete bpm;
+  remove("test.db");
+  remove("test.log");
+}
+
 TEST(BPlusTreeTests, InsertTest1) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
