@@ -99,7 +99,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::FindKeyIndex(const KeyType &key, int &pos, 
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::FindPointerIndex(const page_id_t page_id) const -> int {
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::FindPointerIndex(page_id_t page_id) const -> int {
   int pos = 0;
   int size = GetSize();
   for (; pos < size; pos++) {

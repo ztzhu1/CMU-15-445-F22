@@ -38,7 +38,7 @@ auto BPlusTreePage::MoreThanMin() const -> bool { return size_ > GetMinSize(); }
 auto BPlusTreePage::GetMaxSize() const -> int { return max_size_; }
 void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
 
-static inline int DivCeil(int a, int b) { return (a + (b - 1)) / b; }
+static inline auto DivCeil(int a, int b) -> int { return (a + (b - 1)) / b; }
 
 /*
  * Helper method to get min page size

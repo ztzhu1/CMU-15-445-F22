@@ -75,15 +75,13 @@ TEST(BPlusTreeTests, InsertTest0) {
   index_key.SetFromInteger(9);
   ASSERT_TRUE(tree.GetValue(index_key, &result, transaction));
 
-  // Remove(7, tree, transaction);
-  // Remove(8, tree, transaction);
-  // Remove(9, tree, transaction);
-  // Remove(10, tree, transaction);
+  Remove(1, tree, transaction);
+  Remove(2, tree, transaction);
   Remove(3, tree, transaction);
   Remove(4, tree, transaction);
   Remove(5, tree, transaction);
-  Remove(2, tree, transaction);
   Remove(6, tree, transaction);
+  Remove(7, tree, transaction);
 
   tree.Draw(bpm, "tree.dot");
 

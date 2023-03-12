@@ -12,16 +12,16 @@ static constexpr int NEW_RECORD = 1;
 static constexpr int UPDATE_RECORD = 0;
 
 #define DEF_PARENT_PAGE_VAR(child_page_name)                                         \
-  auto parent_page_id = child_page_name->GetParentPageId();                          \
+  auto parent_page_id = child_page_name->GetParentPageId(); /* NOLINT */             \
   auto parent_page = buffer_pool_manager_->FetchPage(parent_page_id);                \
   auto parent_bplus_page = reinterpret_cast<InternalPage *>(parent_page->GetData()); \
   [[maybe_unused]] auto parent_pairs = parent_bplus_page->GetPairs();
 
-#define DEF_SIBLING_PAGE_VAR(page_type, page_name, pos)                                     \
-  auto page_name##_page_id = parent_pairs[pos].second;                                      \
-  auto page_name##_page = buffer_pool_manager_->FetchPage(page_name##_page_id);             \
-  auto page_name##_bplus_page = reinterpret_cast<page_type *>(page_name##_page->GetData()); \
-  auto page_name##_pairs = page_name##_bplus_page->GetPairs();                              \
+#define DEF_SIBLING_PAGE_VAR(page_type, page_name, pos)                                                  \
+  auto page_name##_page_id = parent_pairs[pos].second;                                                   \
+  auto page_name##_page = buffer_pool_manager_->FetchPage(page_name##_page_id);                          \
+  auto page_name##_bplus_page = reinterpret_cast<page_type *>(page_name##_page->GetData()); /* NOLINT */ \
+  auto page_name##_pairs = page_name##_bplus_page->GetPairs();                                           \
   auto page_name##_size = page_name##_bplus_page->GetSize();
 
 #define DEF_LEFT_PAGE_VAR(page_type) DEF_SIBLING_PAGE_VAR(page_type, left, pointer_pos - 1)
@@ -159,6 +159,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
       parent_pairs[pointer_pos].first = pairs[0].first;
 
       buffer_pool_manager_->UnpinPage(left_page_id, true);
+      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (policy == Policy::BorrowFromRight) {
       DEF_RIGHT_PAGE_VAR(LeafPage);
 
@@ -173,11 +174,12 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
       parent_pairs[pointer_pos + 1].first = right_pairs[0].first;
 
       buffer_pool_manager_->UnpinPage(right_page_id, true);
+      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (policy == Policy::MergeWithLeft) { /* can't borrow, have to merge */
       DEF_LEFT_PAGE_VAR(LeafPage);
 
       // move pairs of leaf_page to the left sibling.
-      // leaf_page itself is useless but we don't consider deallocing it now.
+      // leaf_page itself is useless, but we don't consider deallocing it now.
       std::memmove(static_cast<void *>(left_pairs + left_size), static_cast<void *>(pairs),
                    pos * sizeof(LeafMappingType));
       std::memmove(static_cast<void *>(left_pairs + left_size + pos), static_cast<void *>(pairs + pos + 1),
@@ -189,9 +191,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
 
       // ok, I did all my tasks, `RemoveFromInternal` should deal
       // with the remaining internal-page-relative tasks.
-      RemoveFromInternal(parent_bplus_page, pointer_pos);
-
       buffer_pool_manager_->UnpinPage(left_page_id, true);
+      RemoveFromInternal(parent_bplus_page, pointer_pos);
+      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (policy == Policy::MergeWithRight) {
       DEF_RIGHT_PAGE_VAR(LeafPage);
 
@@ -208,14 +210,12 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
 
       // ok, I did all my tasks, `RemoveFromInternal` should deal
       // with the remaining internal-page-relative tasks.
-      RemoveFromInternal(parent_bplus_page, pointer_pos + 1);
-
       buffer_pool_manager_->UnpinPage(right_page_id, true);
+      RemoveFromInternal(parent_bplus_page, pointer_pos + 1);
+      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else {
       UNREACHABLE("");
     }
-
-    buffer_pool_manager_->UnpinPage(parent_page_id, true);
   }
 
   buffer_pool_manager_->UnpinPage(leaf_page_id, true);
@@ -494,7 +494,7 @@ auto BPLUSTREE_TYPE::FindInsertInternalPos(InternalMappingType *data, int size, 
  * Called when merging the children.
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, page_id_t *page_id) -> bool {
+void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, const page_id_t *page_id) {
   auto pairs = internal_page->GetPairs();
   auto size = internal_page->GetSize();
   auto id = internal_page->GetPageId();
@@ -504,7 +504,7 @@ auto BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, pa
     std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
                  (size - pos - 1) * sizeof(InternalMappingType));
     internal_page->IncreaseSize(-1);
-    return true;
+    return;
   }
 
   // there is only one key in the root internal page.
@@ -512,23 +512,6 @@ auto BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, pa
     auto child_id = pairs[0].second;
     auto child_page = buffer_pool_manager_->FetchPage(child_id);
     auto child_bplus_page = reinterpret_cast<BPlusTreePage *>(child_page->GetData());
-    if (child_bplus_page->IsInternalPage()) {
-      auto key = pairs[1].first;
-      auto child_bplus_internal_page = reinterpret_cast<InternalPage *>(child_bplus_page);
-      auto child_size = child_bplus_internal_page->GetSize();
-      auto child_pairs = child_bplus_internal_page->GetPairs();
-      int insert_pos = 0;
-      for (; insert_pos < child_size; insert_pos++) {
-        if (comparator_(key, child_pairs[insert_pos].first) < 0) {
-          break;
-        }
-      }
-      std::memmove(static_cast<void *>(child_pairs + insert_pos + 1), static_cast<void *>(child_pairs + insert_pos),
-                   (child_size - insert_pos) * sizeof(LeafMappingType));
-      assert(page_id != nullptr);
-      child_pairs[insert_pos] = std::make_pair(key, *page_id);
-      child_bplus_internal_page->IncreaseSize(1);
-    }
     child_bplus_page->SetParentPageId(INVALID_PAGE_ID);
     root_page_id_ = child_id;
     UpdateRootPageId(UPDATE_RECORD);
@@ -565,9 +548,9 @@ auto BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, pa
 
       auto child_of_right_id = right_pairs[0].second;
 
-      pairs[size - 1].first = parent_pairs[pointer_pos+1].first;
+      pairs[size - 1].first = parent_pairs[pointer_pos + 1].first;
       pairs[size - 1].second = child_of_right_id;
-      parent_pairs[pointer_pos+1].first = right_pairs[1].first;
+      parent_pairs[pointer_pos + 1].first = right_pairs[1].first;
 
       std::memmove(static_cast<void *>(right_pairs), static_cast<void *>(right_pairs + 1),
                    (right_size - 1) * sizeof(InternalMappingType));
@@ -579,11 +562,67 @@ auto BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, pa
 
       buffer_pool_manager_->UnpinPage(child_of_right_id, true);
       buffer_pool_manager_->UnpinPage(right_page_id, true);
-    }
+    } else if (policy == Policy::MergeWithLeft) {
+      DEF_LEFT_PAGE_VAR(InternalPage);
 
+      auto child_of_internal_id = pairs[0].second;
+      // parent pair sinks.
+      left_pairs[left_size].first = parent_pairs[pointer_pos].first;
+      left_pairs[left_size].second = child_of_internal_id;
+      // move pairs of internal_page to the left sibling.
+      // internal_page itself is useless but we don't consider deallocing it now.
+      std::memmove(static_cast<void *>(left_pairs + left_size + 1), static_cast<void *>(pairs + 1),
+                   (pos - 1) * sizeof(InternalMappingType));
+      std::memmove(static_cast<void *>(left_pairs + left_size + pos), static_cast<void *>(pairs + pos + 1),
+                   (size - pos - 1) * sizeof(InternalMappingType));
+
+      left_bplus_page->IncreaseSize(size);
+      internal_page->SetSize(0);
+      int new_left_size = left_bplus_page->GetSize();
+      for (int i = left_size; i < new_left_size; i++) {
+        auto child_id = left_pairs[i].second;
+        auto child_page = buffer_pool_manager_->FetchPage(child_id);
+        auto child_bplus_page = reinterpret_cast<BPlusTreePage *>(child_page);
+        child_bplus_page->SetPageId(left_page_id);
+        buffer_pool_manager_->UnpinPage(child_id, true);
+      }
+
+      int page_id = pairs[0].second;
+      buffer_pool_manager_->UnpinPage(left_page_id, true);
+      RemoveFromInternal(parent_bplus_page, pointer_pos, &page_id);
+    } else if (policy == Policy::MergeWithRight) {
+      DEF_RIGHT_PAGE_VAR(InternalPage);
+
+      auto child_of_right_id = right_pairs[0].second;
+      std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
+                   (size - pos - 1) * sizeof(InternalMappingType));
+      // parent pair sinks.
+      pairs[size - 1].first = parent_pairs[pointer_pos + 1].first;
+      pairs[size - 1].second = child_of_right_id;
+      // move pairs of right sibling to the internal page.
+      // right sibling page is useless, but we don't consider deallocing it now.
+      std::memmove(static_cast<void *>(pairs + size), static_cast<void *>(right_pairs + 1),
+                   (right_size - 1) * sizeof(InternalMappingType));
+
+      internal_page->IncreaseSize(right_size - 1);
+      right_bplus_page->SetSize(0);
+      int new_size = internal_page->GetSize();
+      for (int i = size - 1; i < new_size; i++) {
+        auto child_id = pairs[i].second;
+        auto child_page = buffer_pool_manager_->FetchPage(child_id);
+        auto child_bplus_page = reinterpret_cast<BPlusTreePage *>(child_page);
+        child_bplus_page->SetParentPageId(id);
+        buffer_pool_manager_->UnpinPage(child_id, true);
+      }
+
+      int page_id = right_pairs[0].second;
+      buffer_pool_manager_->UnpinPage(right_page_id, true);
+      RemoveFromInternal(parent_bplus_page, pointer_pos + 1, &page_id);
+    } else {
+      UNREACHABLE("");
+    }
     buffer_pool_manager_->UnpinPage(parent_page_id, true);
   }
-  return false;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
