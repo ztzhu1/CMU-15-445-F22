@@ -238,7 +238,10 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  auto page = FindLeafPage(key);
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, &comparator_, page, key);
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end

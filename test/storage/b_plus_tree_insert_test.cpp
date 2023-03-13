@@ -85,8 +85,6 @@ TEST(BPlusTreeTests, InsertTest0) {
 
   tree.Draw(bpm, "tree.dot");
 
-  tree.Draw(bpm, "tree.dot");
-
   bpm->UnpinPage(root_page_id, false);
   bpm->UnpinPage(HEADER_PAGE_ID, true);
   delete transaction;
@@ -203,7 +201,7 @@ TEST(BPlusTreeTests, InsertTest2) {
   remove("test.log");
 }
 
-TEST(BPlusTreeTests, DISABLED_InsertTest3) {
+TEST(BPlusTreeTests, InsertTest3) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
