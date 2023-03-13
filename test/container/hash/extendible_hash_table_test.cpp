@@ -10,7 +10,41 @@
 
 namespace bustub {
 
-TEST(ExtendibleHashTableTest, DISABLED_SampleTest) {
+// void DebugTable(std::shared_ptr<ExtendibleHashTable<int, int>> table) {
+//   printf("global depth: %d\nbucket num: %d\n", table->GetGlobalDepth(), table->GetNumBuckets());
+//   for (int i = 0; i < table->GetNumBuckets(); i++) {
+//     printf("bucket %d depth: %d, size: %lu | ", i, table->GetLocalDepth(i), table->dir_[i]->list_.size());
+//     for (auto j : table->dir_[i]->list_) {
+//       printf("%d ", j.first);
+//     }
+//     printf("\n");
+//   }
+//   printf("\n");
+// }
+
+// TEST(ExtendibleHashTableTest, DISABLED_MyTest) {
+//   auto table = std::make_shared<ExtendibleHashTable<int, int>>(2);
+
+//   DebugTable(table);
+//   table->Insert(0, 0);
+//   DebugTable(table);
+//   table->Insert(2, 2);
+//   DebugTable(table);
+//   table->Insert(1, 1);
+//   DebugTable(table);
+
+//   for (int i = 0; i < 100; i++) {
+//     std::thread t1([&table]() { table->Insert(1, 1); });
+//     std::thread t0([&table]() { table->Insert(0, 0); });
+//     std::thread t2([&table]() { table->Insert(2, 2); });
+//     t0.join();
+//     t1.join();
+//     t2.join();
+//     EXPECT_EQ(table->GetGlobalDepth(), 1);
+//   }
+// }
+
+TEST(ExtendibleHashTableTest, SampleTest) {
   auto table = std::make_unique<ExtendibleHashTable<int, std::string>>(2);
 
   table->Insert(1, "a");
@@ -42,7 +76,7 @@ TEST(ExtendibleHashTableTest, DISABLED_SampleTest) {
   EXPECT_FALSE(table->Remove(20));
 }
 
-TEST(ExtendibleHashTableTest, DISABLED_ConcurrentInsertTest) {
+TEST(ExtendibleHashTableTest, ConcurrentInsertTest) {
   const int num_runs = 50;
   const int num_threads = 3;
 
@@ -68,4 +102,24 @@ TEST(ExtendibleHashTableTest, DISABLED_ConcurrentInsertTest) {
   }
 }
 
+TEST(ExtendibleHashTableTest, ConcurrentInsertHardTest) {
+  const int num_runs = 50;
+  const int num_threads = 31;
+
+  // Run concurrent test multiple times to guarantee correctness.
+  for (int run = 0; run < num_runs; run++) {
+    auto table = std::make_shared<ExtendibleHashTable<int, int>>(2);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    for (int tid = 0; tid < num_threads; tid++) {
+      threads.emplace_back([tid, &table]() { table->Insert(tid * tid, tid); });
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+
+    EXPECT_EQ(table->GetGlobalDepth(), 8);
+  }
+}
 }  // namespace bustub

@@ -150,7 +150,7 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   /** Array of buffer pool pages. */
   Page *pages_;
   /** Pointer to the disk manager. */
-  DiskManager *disk_manager_ __attribute__((__unused__));
+  DiskManager *disk_manager_;
   /** Pointer to the log manager. Please ignore this for P1. */
   LogManager *log_manager_ __attribute__((__unused__));
   /** Page table for keeping track of buffer pool pages. */
@@ -176,6 +176,14 @@ class BufferPoolManagerInstance : public BufferPoolManager {
     // This is a no-nop right now without a more complex data structure to track deallocated pages
   }
 
+ private:
   // TODO(student): You may add additional private members and helper functions
+  void ResetPageData(Page *page);
+
+  auto FindPage(page_id_t page_id, frame_id_t &frame_id) -> Page *;
+
+  auto FindAvailableFrame(frame_id_t &frame_id) -> bool;
+
+  void ExaminePageId(page_id_t page_id);
 };
 }  // namespace bustub
