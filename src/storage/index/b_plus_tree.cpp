@@ -494,7 +494,7 @@ auto BPLUSTREE_TYPE::FindInsertInternalPos(InternalMappingType *data, int size, 
  * Called when merging the children.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, const page_id_t *page_id) {
+void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos) {
   auto pairs = internal_page->GetPairs();
   auto size = internal_page->GetSize();
   auto id = internal_page->GetPageId();
@@ -587,9 +587,8 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, co
         buffer_pool_manager_->UnpinPage(child_id, true);
       }
 
-      int page_id = pairs[0].second;
       buffer_pool_manager_->UnpinPage(left_page_id, true);
-      RemoveFromInternal(parent_bplus_page, pointer_pos, &page_id);
+      RemoveFromInternal(parent_bplus_page, pointer_pos);
     } else if (policy == Policy::MergeWithRight) {
       DEF_RIGHT_PAGE_VAR(InternalPage);
 
@@ -615,9 +614,8 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, co
         buffer_pool_manager_->UnpinPage(child_id, true);
       }
 
-      int page_id = right_pairs[0].second;
       buffer_pool_manager_->UnpinPage(right_page_id, true);
-      RemoveFromInternal(parent_bplus_page, pointer_pos + 1, &page_id);
+      RemoveFromInternal(parent_bplus_page, pointer_pos + 1);
     } else {
       UNREACHABLE("");
     }
