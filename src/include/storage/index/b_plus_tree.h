@@ -95,6 +95,8 @@ class BPlusTree {
 
   auto FindInsertInternalPos(InternalMappingType *data, int size, const KeyType &key) -> int;
 
+  void RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key);
+
   void RemoveFromInternal(InternalPage *internal_page, int pos);
 
   auto GetPolicy(LeafPage *leaf_page, int pointer_pos) -> Policy;
@@ -105,7 +107,11 @@ class BPlusTree {
 
   auto NewRootPage(page_id_t &root_page_id) -> InternalPage *;
 
-  auto FindLeafPage(const KeyType &key, Transaction *transaction = nullptr) -> Page *;
+  auto FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, UpdateMode mode, Transaction *transaction = nullptr)
+      -> Page *;
+
+  auto FindLeafPageSafely(const KeyType &key, std::vector<Page *> &locked_pages, UpdateMode mode,
+                          Transaction *transaction = nullptr) -> Page *;
 
   void UpdateRootPageId(int insert_record = 0);
 
@@ -121,6 +127,9 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  std::recursive_mutex root_page_id_mu_;
+  [[maybe_unused]] std::mutex test_mu_;
+  [[maybe_unused]] std::mutex test_mu_2;
 };
 
 }  // namespace bustub

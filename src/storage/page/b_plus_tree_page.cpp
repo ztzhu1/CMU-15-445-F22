@@ -31,6 +31,18 @@ void BPlusTreePage::SetSize(int size) { size_ = size; }
 void BPlusTreePage::IncreaseSize(int amount) { size_ += amount; }
 auto BPlusTreePage::IsFull() const -> bool { return size_ == max_size_; }
 auto BPlusTreePage::MoreThanMin() const -> bool { return size_ > GetMinSize(); }
+auto BPlusTreePage::SafeToUpdate(UpdateMode mode) const -> bool {
+  if (mode == UpdateMode::INSERT) {
+    return size_ + 1 < max_size_;
+  }
+  if (mode == UpdateMode::REMOVE) {
+    return MoreThanMin();
+  }
+  if (mode == UpdateMode::NOT_UPDATE) {
+    return true;
+  }
+  UNREACHABLE("");
+}
 
 /*
  * Helper methods to get/set max size (capacity) of the page

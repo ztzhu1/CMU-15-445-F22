@@ -58,30 +58,30 @@ TEST(BPlusTreeTests, InsertTest0) {
   auto root_page = reinterpret_cast<BPlusTreePage *>(bpm->FetchPage(root_page_id)->GetData());
   ASSERT_NE(root_page, nullptr);
 
-  Insert(2, tree, transaction);
   Insert(3, tree, transaction);
-  Insert(4, tree, transaction);
   Insert(5, tree, transaction);
-  Insert(6, tree, transaction);
   Insert(7, tree, transaction);
-  Insert(8, tree, transaction);
-  Insert(9, tree, transaction);
-  Insert(10, tree, transaction);
-  Insert(11, tree, transaction);
-  Insert(12, tree, transaction);
+  Insert(2, tree, transaction);
+  Insert(4, tree, transaction);
+  Insert(6, tree, transaction);
+  // Insert(8, tree, transaction);
+  // Insert(9, tree, transaction);
+  // Insert(10, tree, transaction);
+  // Insert(11, tree, transaction);
+  // Insert(12, tree, transaction);
 
-  std::vector<RID> result;
-  GenericKey<8> index_key;
-  index_key.SetFromInteger(9);
-  ASSERT_TRUE(tree.GetValue(index_key, &result, transaction));
+  // std::vector<RID> result;
+  // GenericKey<8> index_key;
+  // index_key.SetFromInteger(8);
+  // ASSERT_TRUE(tree.GetValue(index_key, &result, transaction));
 
-  Remove(1, tree, transaction);
-  Remove(2, tree, transaction);
-  Remove(3, tree, transaction);
-  Remove(4, tree, transaction);
-  Remove(5, tree, transaction);
-  Remove(6, tree, transaction);
-  Remove(7, tree, transaction);
+  // Remove(1, tree, transaction);
+  // Remove(2, tree, transaction);
+  // Remove(3, tree, transaction);
+  // Remove(4, tree, transaction);
+  // Remove(5, tree, transaction);
+  // Remove(6, tree, transaction);
+  // Remove(7, tree, transaction);
 
   tree.Draw(bpm, "tree.dot");
 

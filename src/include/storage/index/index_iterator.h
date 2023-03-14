@@ -28,7 +28,7 @@ class IndexIterator {
   IndexIterator() = default;
   IndexIterator(const IndexIterator &) = delete;
   IndexIterator(const IndexIterator &&) = delete;
-  IndexIterator &operator=(const IndexIterator &) = delete;
+  auto operator=(const IndexIterator &) -> IndexIterator & = delete;
 
   explicit IndexIterator(BufferPoolManager *buffer_pool_manager, KeyComparator *comparator_, Page *leaf_page,
                          const KeyType &key);

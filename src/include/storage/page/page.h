@@ -49,16 +49,28 @@ class Page {
   inline auto IsDirty() -> bool { return is_dirty_; }
 
   /** Acquire the page write latch. */
-  inline void WLatch() { rwlatch_.WLock(); }
+  inline void WLatch() {
+    rwlatch_.WLock();
+    // printf("%d w latch\n", page_id_);
+  }
 
   /** Release the page write latch. */
-  inline void WUnlatch() { rwlatch_.WUnlock(); }
+  inline void WUnlatch() {
+    rwlatch_.WUnlock();
+    // printf("%d w unlatch\n", page_id_);
+  }
 
   /** Acquire the page read latch. */
-  inline void RLatch() { rwlatch_.RLock(); }
+  inline void RLatch() {
+    rwlatch_.RLock();
+    // printf("%d r latch\n", page_id_);
+  }
 
   /** Release the page read latch. */
-  inline void RUnlatch() { rwlatch_.RUnlock(); }
+  inline void RUnlatch() {
+    rwlatch_.RUnlock();
+    // printf("%d r unlatch\n", page_id_);
+  }
 
   /** @return the page LSN. */
   inline auto GetLSN() -> lsn_t { return *reinterpret_cast<lsn_t *>(GetData() + OFFSET_LSN); }
