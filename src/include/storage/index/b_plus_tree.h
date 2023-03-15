@@ -95,9 +95,9 @@ class BPlusTree {
 
   auto FindInsertInternalPos(InternalMappingType *data, int size, const KeyType &key) -> int;
 
-  void RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key);
+  void RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Transaction *transaction);
 
-  void RemoveFromInternal(InternalPage *internal_page, int pos);
+  void RemoveFromInternal(InternalPage *internal_page, int pos, Transaction *transaction);
 
   auto GetPolicy(LeafPage *leaf_page, int pointer_pos) -> Policy;
 
