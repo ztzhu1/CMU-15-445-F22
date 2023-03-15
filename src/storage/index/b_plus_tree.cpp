@@ -56,8 +56,7 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
       buffer_pool_manager_(buffer_pool_manager),
       comparator_(comparator),
       leaf_max_size_(leaf_max_size),
-      internal_max_size_(internal_max_size) {
-}
+      internal_max_size_(internal_max_size) {}
 
 /*
  * Helper function to decide whether current b+tree is empty
@@ -176,7 +175,10 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  auto page = FindLeftMostPage();
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, &comparator_, page);
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -525,7 +527,7 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
 
       left_bplus_page->IncreaseSize(size - 1);
       leaf_page->SetSize(0);
-      if (transaction) {
+      if (transaction != nullptr) {
         // transaction->LockTxn();
         transaction->AddIntoDeletedPageSet(leaf_page_id);
         // transaction->UnlockTxn();
@@ -550,7 +552,7 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
 
       leaf_page->IncreaseSize(right_size - 1);
       right_bplus_page->SetSize(0);
-      if (transaction) {
+      if (transaction != nullptr) {
         // transaction->LockTxn();
         transaction->AddIntoDeletedPageSet(right_page_id);
         // transaction->UnlockTxn();
@@ -661,7 +663,7 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
 
       left_bplus_page->IncreaseSize(size);
       internal_page->SetSize(0);
-      if (transaction) {
+      if (transaction != nullptr) {
         // transaction->LockTxn();
         transaction->AddIntoDeletedPageSet(id);
         // transaction->UnlockTxn();
@@ -694,7 +696,7 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
 
       internal_page->IncreaseSize(right_size - 1);
       right_bplus_page->SetSize(0);
-      if (transaction) {
+      if (transaction != nullptr) {
         // transaction->LockTxn();
         transaction->AddIntoDeletedPageSet(right_page_id);
         // transaction->UnlockTxn();
@@ -797,7 +799,7 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, 
     page->RLatch();
   }
   fake_parent_of_root_.RUnlock();
-  if (transaction) {
+      if (transaction != nullptr) {
     // transaction->LockTxn();
     transaction->AddIntoPageSet(page);
     // transaction->UnlockTxn();
@@ -861,6 +863,26 @@ auto BPLUSTREE_TYPE::FindLeafPageSafely(const KeyType &key, std::vector<Page *> 
     }
     locked_pages.push_back(next_page);
 
+    page = next_page;
+  }
+  return page;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::FindLeftMostPage() -> Page * {
+  fake_parent_of_root_.RLock();
+  Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
+  auto bplus_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  page->RLatch();
+  fake_parent_of_root_.RUnlock();
+
+  while (!bplus_page->IsLeafPage()) {
+    auto internal_page = reinterpret_cast<InternalPage *>(bplus_page);
+    auto pairs = internal_page->GetPairs();
+    auto next_page = buffer_pool_manager_->FetchPage(pairs[0].second);
+    bplus_page = reinterpret_cast<BPlusTreePage *>(next_page->GetData());
+    next_page->RLatch();
+    UNLATCH_UNPIN(page, R, false);
     page = next_page;
   }
   return page;

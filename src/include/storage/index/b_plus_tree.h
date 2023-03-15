@@ -112,6 +112,8 @@ class BPlusTree {
   auto FindLeafPageSafely(const KeyType &key, std::vector<Page *> &locked_pages, UpdateMode mode,
                           Transaction *transaction = nullptr) -> Page *;
 
+  auto FindLeftMostPage() -> Page *;
+
   void UpdateRootPageId(int insert_record = 0);
 
   /* Debug Routines for FREE!! */
