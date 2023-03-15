@@ -24,6 +24,31 @@ INDEXITERATOR_TYPE::IndexIterator(BufferPoolManager *buffer_pool_manager, KeyCom
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+INDEXITERATOR_TYPE::IndexIterator(BufferPoolManager *buffer_pool_manager, KeyComparator *comparator, Page *leaf_page)
+    : buffer_pool_manager_(buffer_pool_manager), comparator_(comparator), curr_leaf_page_(leaf_page) {
+  curr_leaf_page_id_ = curr_leaf_page_->GetPageId();
+  curr_leaf_bplus_page_ = reinterpret_cast<LeafPage *>(curr_leaf_page_->GetData());
+  curr_pos_in_leaf_page_ = 0;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+INDEXITERATOR_TYPE::IndexIterator(const IndexIterator &&that) noexcept {
+  this->buffer_pool_manager_ = that.buffer_pool_manager_;
+  this->comparator_ = that.comparator_;
+  this->curr_leaf_page_id_ = that.curr_leaf_page_id_;
+  this->curr_leaf_page_ = that.curr_leaf_page_;
+  this->curr_leaf_bplus_page_ = that.curr_leaf_bplus_page_;
+  this->curr_pos_in_leaf_page_ = that.curr_pos_in_leaf_page_;
+
+  this->buffer_pool_manager_ = nullptr;
+  this->comparator_ = nullptr;
+  this->curr_leaf_page_id_ = -1;
+  this->curr_leaf_page_ = nullptr;
+  this->curr_leaf_bplus_page_ = nullptr;
+  this->curr_pos_in_leaf_page_ = 0;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::~IndexIterator() {
   if (IsEnd()) {
     return;
@@ -49,6 +74,7 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
     curr_pos_in_leaf_page_ = 0;
     auto next_page_id = curr_leaf_bplus_page_->GetNextPageId();
     if (next_page_id == INVALID_PAGE_ID) {
+      curr_leaf_page_->RUnlatch();
       buffer_pool_manager_ = nullptr;
       comparator_ = nullptr;
       curr_leaf_page_id_ = -1;
@@ -58,6 +84,8 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
     }
 
     auto next_page = buffer_pool_manager_->FetchPage(next_page_id);
+    next_page->RLatch();
+    curr_leaf_page_->RUnlatch();
     buffer_pool_manager_->UnpinPage(curr_leaf_page_id_, false);
     curr_leaf_page_id_ = next_page_id;
     curr_leaf_page_ = next_page;
