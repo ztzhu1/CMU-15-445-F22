@@ -107,8 +107,7 @@ class BPlusTree {
 
   auto NewRootPage(page_id_t &root_page_id) -> InternalPage *;
 
-  auto FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, UpdateMode mode, Transaction *transaction = nullptr)
-      -> Page *;
+  auto FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, Transaction *transaction = nullptr) -> Page *;
 
   auto FindLeafPageSafely(const KeyType &key, std::vector<Page *> &locked_pages, UpdateMode mode,
                           Transaction *transaction = nullptr) -> Page *;
@@ -127,9 +126,8 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
-  std::recursive_mutex root_page_id_mu_;
+  ReaderWriterLatch fake_parent_of_root_;
   [[maybe_unused]] std::mutex test_mu_;
-  [[maybe_unused]] std::mutex test_mu_2;
 };
 
 }  // namespace bustub

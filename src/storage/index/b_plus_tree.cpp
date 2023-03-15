@@ -35,12 +35,16 @@ static constexpr int UPDATE_RECORD = 0;
     buffer_pool_manager_->UnpinPage(id, dirty); /* NOLINT */ \
   } while (0)
 
-#define CLEAR_LOCKED_PAGES(dirty, locked_pages)          \
-  do {                                                   \
-    for (auto locked_page : locked_pages) { /* NOLINT */ \
-      UNLATCH_UNPIN(locked_page, W, dirty); /* NOLINT */ \
-    }                                                    \
-    locked_pages.clear(); /* NOLINT */                   \
+#define CLEAR_LOCKED_PAGES(dirty, locked_pages)            \
+  do {                                                     \
+    for (auto locked_page : locked_pages) { /* NOLINT */   \
+      if (locked_page) {                                   \
+        UNLATCH_UNPIN(locked_page, W, dirty); /* NOLINT */ \
+      } else {                                             \
+        fake_parent_of_root_.WUnlock();                    \
+      }                                                    \
+    }                                                      \
+    locked_pages.clear(); /* NOLINT */                     \
   } while (0)
 
 namespace bustub {
@@ -70,8 +74,7 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
   // std::lock_guard l(test_mu_);
-  auto page = FindLeafPage(key, false, UpdateMode::NOT_UPDATE, transaction);
-  root_page_id_mu_.unlock();
+  auto page = FindLeafPage(key, false, transaction);
   auto leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   int pos = -1;
   bool found = leaf_page->FindKeyIndex(key, pos, comparator_);
@@ -94,20 +97,21 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  //   std::lock_guard l(test_mu_);
+  // std::lock_guard l(test_mu_);
   // std::cout << "+++" << std::this_thread::get_id() << std::endl;
   bool ret = false;
-  root_page_id_mu_.lock();
+  fake_parent_of_root_.WLock();
   if (IsEmpty()) {
     InitRootAndInsert(key, value, transaction);
-    root_page_id_mu_.unlock();
+    fake_parent_of_root_.WUnlock();
     ret = true;
   } else {
-    auto page = FindLeafPage(key, true, UpdateMode::INSERT, transaction);
-    root_page_id_mu_.unlock();
+    fake_parent_of_root_.WUnlock();
+    // std::cout << "+++" << std::this_thread::get_id() << std::endl;
+    auto page = FindLeafPage(key, true, transaction);
+    // std::cout << "---" << std::this_thread::get_id() << std::endl;
     auto bplus_page = reinterpret_cast<LeafPage *>(page->GetData());
     if (bplus_page->SafeToUpdate(UpdateMode::INSERT)) {
-      root_page_id_mu_.unlock();
       ret = InsertIntoLeaf(bplus_page, key, value, transaction);
       UNLATCH_UNPIN(page, W, true);
     } else {
@@ -117,7 +121,6 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
       bplus_page = reinterpret_cast<LeafPage *>(page->GetData());
 
       ret = InsertIntoLeaf(bplus_page, key, value, transaction);
-      root_page_id_mu_.unlock();
       CLEAR_LOCKED_PAGES(true, locked_pages);
     }
   }
@@ -139,17 +142,16 @@ INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
   // std::lock_guard l(test_mu_);
 
-  root_page_id_mu_.lock();
+  fake_parent_of_root_.WLock();
   if (IsEmpty()) {
-    root_page_id_mu_.unlock();
+    fake_parent_of_root_.WUnlock();
     return;
   }
 
-  auto page = FindLeafPage(key, true, UpdateMode::REMOVE, transaction);
-  root_page_id_mu_.unlock();
+  fake_parent_of_root_.WUnlock();
+  auto page = FindLeafPage(key, true, transaction);
   auto leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   if (leaf_page->SafeToUpdate(UpdateMode::REMOVE)) {
-    root_page_id_mu_.unlock();
     RemoveFromLeaf(leaf_page, key);
     UNLATCH_UNPIN(page, W, true);
   } else {
@@ -157,7 +159,6 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     std::vector<Page *> locked_pages;
     page = FindLeafPageSafely(key, locked_pages, UpdateMode::REMOVE, transaction);
     RemoveFromLeaf(leaf_page, key);
-    root_page_id_mu_.unlock();
     CLEAR_LOCKED_PAGES(true, locked_pages);
   }
 }
@@ -180,7 +181,7 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
-  auto page = FindLeafPage(key, false, UpdateMode::NOT_UPDATE);
+  auto page = FindLeafPage(key, false);
   return INDEXITERATOR_TYPE(buffer_pool_manager_, &comparator_, page, key);
 }
 
@@ -292,10 +293,8 @@ void BPLUSTREE_TYPE::SplitLeaf(LeafPage *leaf_page, Transaction *transaction) {
 
   InternalPage *parent_page;
   if (left_page->IsRootPage()) {
-    root_page_id_mu_.lock();
     parent_page = NewRootPage(parent_page_id);
     parent_page->GetPairs()[0].second = left_page->GetPageId();
-    root_page_id_mu_.unlock();
   } else {
     parent_page_id = left_page->GetParentPageId();
     parent_page = reinterpret_cast<InternalPage *>(buffer_pool_manager_->FetchPage(parent_page_id)->GetData());
@@ -383,10 +382,7 @@ void BPLUSTREE_TYPE::SplitInternal(InternalPage *internal_page, Transaction *tra
 
   InternalPage *parent_page;
   if (left_page->IsRootPage()) {
-    root_page_id_mu_.lock();
     parent_page = NewRootPage(parent_page_id);
-    root_page_id_mu_.unlock();
-
     parent_page->GetPairs()[0].second = left_page->GetPageId();
   } else {
     parent_page_id = left_page->GetParentPageId();
@@ -583,10 +579,8 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos) {
     auto child_bplus_page = reinterpret_cast<BPlusTreePage *>(child_page->GetData());
     child_bplus_page->SetParentPageId(INVALID_PAGE_ID);
 
-    root_page_id_mu_.lock();
     root_page_id_ = child_id;
     UpdateRootPageId(UPDATE_RECORD);
-    root_page_id_mu_.unlock();
 
     buffer_pool_manager_->UnpinPage(child_id, true);
   } else {
@@ -764,10 +758,13 @@ auto BPLUSTREE_TYPE::NewRootPage(page_id_t &root_page_id) -> InternalPage * {
   return root_page;
 }
 
+/** The function may not release `root_page_id_mu_`
+ *  if the root page is a leaf page and it's unsafe
+ *  to update it.
+ */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, UpdateMode mode,
-                                  Transaction *transaction) -> Page * {
-  root_page_id_mu_.lock();
+auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, Transaction *transaction) -> Page * {
+  fake_parent_of_root_.RLock();
   Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
   auto bplus_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
   if (bplus_page->IsLeafPage() && need_wlatch_at_leaf) {
@@ -775,6 +772,7 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, 
   } else {
     page->RLatch();
   }
+  fake_parent_of_root_.RUnlock();
 
   while (!bplus_page->IsLeafPage()) {
     auto internal_page = reinterpret_cast<InternalPage *>(bplus_page);
@@ -804,12 +802,16 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::FindLeafPageSafely(const KeyType &key, std::vector<Page *> &locked_pages, UpdateMode mode,
                                         Transaction *transaction) -> Page * {
-  //  root_page_id_mu_.lock();
+  fake_parent_of_root_.WLock();
+  locked_pages.push_back(nullptr);
   // std::cout << "key:" << key << " thinks root id is " << root_page_id_ << std::endl;
   Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
 
   auto bplus_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
   page->WLatch();
+  if (bplus_page->SafeToUpdate(mode)) {
+    CLEAR_LOCKED_PAGES(false, locked_pages);
+  }
   locked_pages.push_back(page);
 
   while (!bplus_page->IsLeafPage()) {
@@ -823,8 +825,8 @@ auto BPLUSTREE_TYPE::FindLeafPageSafely(const KeyType &key, std::vector<Page *> 
       }
     }
     auto next_page = buffer_pool_manager_->FetchPage(pairs[pos - 1].second);
-    bplus_page = reinterpret_cast<BPlusTreePage *>(next_page->GetData());
     next_page->WLatch();
+    bplus_page = reinterpret_cast<BPlusTreePage *>(next_page->GetData());
     if (bplus_page->SafeToUpdate(mode)) {
       CLEAR_LOCKED_PAGES(false, locked_pages);
     }
