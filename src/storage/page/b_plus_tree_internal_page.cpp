@@ -66,8 +66,8 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::UpdateKey(const KeyType &old_key, const Key
                                                const KeyComparator &cmp) {
   int pos = -1;
   bool found = FindKeyIndex(old_key, pos, cmp);
-  assert(found);
-  if (pos == 0) {
+  // assert(found);
+  if (pos == 0 || !found) {
     return;
   }
   (array_ + pos)->first = new_key;

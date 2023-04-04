@@ -35,6 +35,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   auto txn = exec_ctx_->GetTransaction();
+  Schema *table_schema = &table_info_->schema_;
   int cnt = 0;
 
   while (child_executor_->Next(&child_tuple, &child_rid)) {
@@ -43,7 +44,10 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       ++cnt;
     }
     for (auto index : indexes_) {
-      index->index_->DeleteEntry(child_tuple, child_rid, txn);
+      auto col = index->index_->GetKeyAttrs()[0];
+      auto index_schema = index->index_->GetKeySchema();
+      auto t = Tuple{std::vector{child_tuple.GetValue(table_schema, col)}, index_schema};
+      index->index_->DeleteEntry(t, child_rid, txn);
     }
   }
 

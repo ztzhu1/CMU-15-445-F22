@@ -27,7 +27,7 @@ class IndexIterator {
   // you may define your own constructor based on your member variables
   IndexIterator() = default;
   IndexIterator(const IndexIterator &) = delete;
-  IndexIterator(const IndexIterator &&that) noexcept;
+  IndexIterator(IndexIterator &&that) noexcept;
   auto operator=(const IndexIterator &) -> IndexIterator & = delete;
 
   explicit IndexIterator(BufferPoolManager *buffer_pool_manager, KeyComparator *comparator_, Page *leaf_page);

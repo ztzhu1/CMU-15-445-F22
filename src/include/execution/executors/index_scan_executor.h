@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "common/rid.h"
@@ -42,7 +43,12 @@ class IndexScanExecutor : public AbstractExecutor {
   auto Next(Tuple *tuple, RID *rid) -> bool override;
 
  private:
+  using ITERATOR_TYPE = IndexIterator<IntegerKeyType, IntegerValueType, IntegerComparatorType>;
   /** The index scan plan node to be executed. */
   const IndexScanPlanNode *plan_;
+  TableInfo *table_info_;
+  IndexInfo *index_info_;
+  BPlusTreeIndexForOneIntegerColumn *tree_;
+  std::unique_ptr<ITERATOR_TYPE> it_;
 };
 }  // namespace bustub

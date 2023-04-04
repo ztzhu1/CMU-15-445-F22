@@ -32,7 +32,7 @@ INDEXITERATOR_TYPE::IndexIterator(BufferPoolManager *buffer_pool_manager, KeyCom
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-INDEXITERATOR_TYPE::IndexIterator(const IndexIterator &&that) noexcept {
+INDEXITERATOR_TYPE::IndexIterator(IndexIterator &&that) noexcept {
   this->buffer_pool_manager_ = that.buffer_pool_manager_;
   this->comparator_ = that.comparator_;
   this->curr_leaf_page_id_ = that.curr_leaf_page_id_;
@@ -40,12 +40,12 @@ INDEXITERATOR_TYPE::IndexIterator(const IndexIterator &&that) noexcept {
   this->curr_leaf_bplus_page_ = that.curr_leaf_bplus_page_;
   this->curr_pos_in_leaf_page_ = that.curr_pos_in_leaf_page_;
 
-  this->buffer_pool_manager_ = nullptr;
-  this->comparator_ = nullptr;
-  this->curr_leaf_page_id_ = -1;
-  this->curr_leaf_page_ = nullptr;
-  this->curr_leaf_bplus_page_ = nullptr;
-  this->curr_pos_in_leaf_page_ = 0;
+  that.buffer_pool_manager_ = nullptr;
+  that.comparator_ = nullptr;
+  that.curr_leaf_page_id_ = -1;
+  that.curr_leaf_page_ = nullptr;
+  that.curr_leaf_bplus_page_ = nullptr;
+  that.curr_pos_in_leaf_page_ = 0;
 }
 
 INDEX_TEMPLATE_ARGUMENTS

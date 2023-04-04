@@ -17,16 +17,18 @@ static constexpr int UPDATE_RECORD = 0;
   auto parent_bplus_page = reinterpret_cast<InternalPage *>(parent_page->GetData()); \
   [[maybe_unused]] auto parent_pairs = parent_bplus_page->GetPairs();
 
-#define DEF_SIBLING_PAGE_VAR(page_type, page_name, pos)                                                  \
+#define DEF_SIBLING_PAGE_VAR(page_type, page_name, pos, need_wlatch)                                     \
   auto page_name##_page_id = parent_pairs[pos].second;                                                   \
   auto page_name##_page = buffer_pool_manager_->FetchPage(page_name##_page_id);                          \
-  page_name##_page->WLatch();                                                                            \
+  if (need_wlatch) {                                                                                     \
+    page_name##_page->WLatch();                                                                          \
+  }                                                                                                      \
   auto page_name##_bplus_page = reinterpret_cast<page_type *>(page_name##_page->GetData()); /* NOLINT */ \
   auto page_name##_pairs = page_name##_bplus_page->GetPairs();                                           \
   auto page_name##_size = page_name##_bplus_page->GetSize();
 
-#define DEF_LEFT_PAGE_VAR(page_type) DEF_SIBLING_PAGE_VAR(page_type, left, pointer_pos - 1)
-#define DEF_RIGHT_PAGE_VAR(page_type) DEF_SIBLING_PAGE_VAR(page_type, right, pointer_pos + 1)
+#define DEF_LEFT_PAGE_VAR(page_type, need_wlatch) DEF_SIBLING_PAGE_VAR(page_type, left, pointer_pos - 1, need_wlatch)
+#define DEF_RIGHT_PAGE_VAR(page_type, need_wlatch) DEF_SIBLING_PAGE_VAR(page_type, right, pointer_pos + 1, need_wlatch)
 
 #define UNLATCH_UNPIN(page, latch_type, dirty)               \
   do {                                                       \
@@ -74,6 +76,7 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
   std::lock_guard l(test_mu_);
+  fake_parent_of_root_.RLock();
   auto page = FindLeafPage(key, false, transaction);
   auto leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   int pos = -1;
@@ -98,8 +101,6 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
   std::lock_guard l(test_mu_);
-  // std::cout << "+++" << std::this_thread::get_id() << std::endl;
-  // LOG_DEBUG("insert");
   bool ret = false;
   fake_parent_of_root_.RLock();
   if (IsEmpty()) {
@@ -111,8 +112,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
       return true;
     }
     fake_parent_of_root_.WUnlock();
-  } else {
-    fake_parent_of_root_.RUnlock();
+    fake_parent_of_root_.RLock();
   }
   auto page = FindLeafPage(key, true, transaction);
   auto bplus_page = reinterpret_cast<LeafPage *>(page->GetData());
@@ -151,7 +151,6 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     return;
   }
 
-  fake_parent_of_root_.RUnlock();
   auto page = FindLeafPage(key, true, transaction);
   auto leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
   if (leaf_page->SafeToUpdate(UpdateMode::REMOVE)) {
@@ -161,6 +160,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     UNLATCH_UNPIN(page, W, false);
     std::vector<Page *> locked_pages;
     page = FindLeafPageSafely(key, locked_pages, UpdateMode::REMOVE, transaction);
+    auto leaf_page = reinterpret_cast<LeafPage *>(page->GetData());
     RemoveFromLeaf(leaf_page, key, transaction);
     CLEAR_LOCKED_PAGES(true, locked_pages);
   }
@@ -450,12 +450,12 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
   int pos = -1;
   bool found = leaf_page->FindKeyIndex(key, pos, comparator_);
   if (!found) {
-    buffer_pool_manager_->UnpinPage(leaf_page_id, false);
     return;
   }
   assert(pos >= 0);
   assert(pos < size);
 
+  // std::cout << key << ", "  << std::endl;
   // some trivial and non-recursive cases
   if (leaf_page->IsRootPage()) {
     if (size > 1) {
@@ -463,16 +463,18 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
                    (size - pos - 1) * sizeof(LeafMappingType));
       leaf_page->IncreaseSize(-1);
     } else {
-      UNIMPLEMENTED("The tree will be empty after deletion.");
+      root_page_id_ = INVALID_PAGE_ID;
+      UpdateRootPageId(UPDATE_RECORD);
     }
   } else if (leaf_page->MoreThanMin()) {
     if (pos == 0) {
       /* we need to update parent's key */
-      DEF_PARENT_PAGE_VAR(leaf_page);
-      parent_bplus_page->UpdateKey(pairs[0].first, pairs[1].first, comparator_);
+      // DEF_PARENT_PAGE_VAR(leaf_page);
+      // TODO(z): lock parent
+      // parent_bplus_page->UpdateKey(pairs[0].first, pairs[1].first, comparator_);
       std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
                    (size - pos - 1) * sizeof(LeafMappingType));
-      buffer_pool_manager_->UnpinPage(parent_page_id, true);
+      // buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (pos < size - 1) {
       std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
                    (size - pos - 1) * sizeof(LeafMappingType));
@@ -488,7 +490,7 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
     auto policy = GetPolicy(leaf_page, pointer_pos);
 
     if (policy == Policy::BorrowFromLeft) {
-      DEF_LEFT_PAGE_VAR(LeafPage);
+      DEF_LEFT_PAGE_VAR(LeafPage, false);
 
       std::memmove(static_cast<void *>(pairs + 1), static_cast<void *>(pairs), pos * sizeof(LeafMappingType));
       pairs[0] = left_pairs[left_size - 1];
@@ -498,9 +500,8 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
 
       left_page->WUnlatch();
       buffer_pool_manager_->UnpinPage(left_page_id, true);
-      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (policy == Policy::BorrowFromRight) {
-      DEF_RIGHT_PAGE_VAR(LeafPage);
+      DEF_RIGHT_PAGE_VAR(LeafPage, false);
 
       std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
                    (size - pos - 1) * sizeof(LeafMappingType));
@@ -514,9 +515,8 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
 
       right_page->WUnlatch();
       buffer_pool_manager_->UnpinPage(right_page_id, true);
-      buffer_pool_manager_->UnpinPage(parent_page_id, true);
     } else if (policy == Policy::MergeWithLeft) { /* can't borrow, have to merge */
-      DEF_LEFT_PAGE_VAR(LeafPage);
+      DEF_LEFT_PAGE_VAR(LeafPage, false);
 
       // move pairs of leaf_page to the left sibling.
       // leaf_page itself is useless, but we don't consider deallocing it now.
@@ -537,11 +537,10 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
       // ok, I did all my tasks, `RemoveFromInternal` should deal
       // with the remaining internal-page-relative tasks.
       left_page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(left_page_id, true);
       RemoveFromInternal(parent_bplus_page, pointer_pos, transaction);
-      buffer_pool_manager_->UnpinPage(parent_page_id, true);
+      buffer_pool_manager_->UnpinPage(left_page_id, true);
     } else if (policy == Policy::MergeWithRight) {
-      DEF_RIGHT_PAGE_VAR(LeafPage);
+      DEF_RIGHT_PAGE_VAR(LeafPage, false);
 
       // move pairs of right sibling to the leaf_page.
       // right sibling page is useless but we don't consider deallocing it now.
@@ -560,14 +559,14 @@ void BPLUSTREE_TYPE::RemoveFromLeaf(LeafPage *leaf_page, const KeyType &key, Tra
       leaf_page->SetNextPageId(right_bplus_page->GetNextPageId());
 
       // ok, I did all my tasks, `RemoveFromInternal` should deal
-      // with the remaining internal-page-relative tasks.
+      // // with the remaining internal-page-relative tasks.
       right_page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(right_page_id, true);
       RemoveFromInternal(parent_bplus_page, pointer_pos + 1, transaction);
-      buffer_pool_manager_->UnpinPage(parent_page_id, true);
+      buffer_pool_manager_->UnpinPage(right_page_id, true);
     } else {
       UNREACHABLE("");
     }
+    buffer_pool_manager_->UnpinPage(parent_page_id, true);
   }
 }
 
@@ -605,7 +604,7 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
     auto policy = GetPolicy(internal_page, pointer_pos);
 
     if (policy == Policy::BorrowFromLeft) {
-      DEF_LEFT_PAGE_VAR(InternalPage);
+      DEF_LEFT_PAGE_VAR(InternalPage, false);
 
       auto child_of_left_id = left_pairs[left_size - 1].second;
 
@@ -618,14 +617,16 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
       left_bplus_page->IncreaseSize(-1);
 
       auto child_of_left_page = buffer_pool_manager_->FetchPage(child_of_left_id);
+      // child_of_left_page->WLatch();
       auto child_of_left_bplus_page = reinterpret_cast<InternalPage *>(child_of_left_page->GetData());
       child_of_left_bplus_page->SetParentPageId(id);
 
+      // child_of_left_page->WUnlatch();
       left_page->WUnlatch();
       buffer_pool_manager_->UnpinPage(child_of_left_id, true);
       buffer_pool_manager_->UnpinPage(left_page_id, true);
     } else if (policy == Policy::BorrowFromRight) {
-      DEF_RIGHT_PAGE_VAR(InternalPage);
+      DEF_RIGHT_PAGE_VAR(InternalPage, false);
 
       std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
                    (size - pos - 1) * sizeof(InternalMappingType));
@@ -641,14 +642,16 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
       right_bplus_page->IncreaseSize(-1);
 
       auto child_of_right_page = buffer_pool_manager_->FetchPage(child_of_right_id);
+      // child_of_right_page->WLatch();
       auto child_of_right_bplus_page = reinterpret_cast<InternalPage *>(child_of_right_page->GetData());
       child_of_right_bplus_page->SetParentPageId(id);
 
+      // child_of_right_page->WUnlatch();
       right_page->WUnlatch();
       buffer_pool_manager_->UnpinPage(child_of_right_id, true);
       buffer_pool_manager_->UnpinPage(right_page_id, true);
     } else if (policy == Policy::MergeWithLeft) {
-      DEF_LEFT_PAGE_VAR(InternalPage);
+      DEF_LEFT_PAGE_VAR(InternalPage, false);
 
       auto child_of_internal_id = pairs[0].second;
       // parent pair sinks.
@@ -661,7 +664,7 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
       std::memmove(static_cast<void *>(left_pairs + left_size + pos), static_cast<void *>(pairs + pos + 1),
                    (size - pos - 1) * sizeof(InternalMappingType));
 
-      left_bplus_page->IncreaseSize(size);
+      left_bplus_page->IncreaseSize(size - 1);
       internal_page->SetSize(0);
       if (transaction != nullptr) {
         // transaction->LockTxn();
@@ -673,15 +676,15 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
         auto child_id = left_pairs[i].second;
         auto child_page = buffer_pool_manager_->FetchPage(child_id);
         auto child_bplus_page = reinterpret_cast<BPlusTreePage *>(child_page);
-        child_bplus_page->SetPageId(left_page_id);
+        child_bplus_page->SetParentPageId(left_page_id);
         buffer_pool_manager_->UnpinPage(child_id, true);
       }
 
       left_page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(left_page_id, true);
       RemoveFromInternal(parent_bplus_page, pointer_pos, transaction);
+      buffer_pool_manager_->UnpinPage(left_page_id, true);
     } else if (policy == Policy::MergeWithRight) {
-      DEF_RIGHT_PAGE_VAR(InternalPage);
+      DEF_RIGHT_PAGE_VAR(InternalPage, false);
 
       auto child_of_right_id = right_pairs[0].second;
       std::memmove(static_cast<void *>(pairs + pos), static_cast<void *>(pairs + pos + 1),
@@ -711,8 +714,8 @@ void BPLUSTREE_TYPE::RemoveFromInternal(InternalPage *internal_page, int pos, Tr
       }
 
       right_page->WUnlatch();
-      buffer_pool_manager_->UnpinPage(right_page_id, true);
       RemoveFromInternal(parent_bplus_page, pointer_pos + 1, transaction);
+      buffer_pool_manager_->UnpinPage(right_page_id, true);
     } else {
       UNREACHABLE("");
     }
@@ -734,7 +737,6 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetPolicy(BPlusTreePage *bplus_page, int pointer_pos) -> Policy {
   auto parent_page_id = bplus_page->GetParentPageId();
   auto parent_page = buffer_pool_manager_->FetchPage(parent_page_id);
-  parent_page->RLatch();
   auto parent_bplus_page = reinterpret_cast<InternalPage *>(parent_page->GetData());
   auto parent_pairs = parent_bplus_page->GetPairs();
   auto policy = Policy::Unknown;
@@ -742,33 +744,42 @@ auto BPLUSTREE_TYPE::GetPolicy(BPlusTreePage *bplus_page, int pointer_pos) -> Po
   if (pointer_pos > 0) {
     auto left_page_id = parent_pairs[pointer_pos - 1].second;
     auto *left_page = buffer_pool_manager_->FetchPage(left_page_id);
-    left_page->RLatch();
+    left_page->WLatch();
     auto *left_bplus_page = reinterpret_cast<BPlusTreePage *>(left_page->GetData());
     if (left_bplus_page->MoreThanMin()) {
       policy = Policy::BorrowFromLeft;
+    } else {
+      left_page->WUnlatch();
     }
-    left_page->RUnlatch();
     buffer_pool_manager_->UnpinPage(left_page_id, false);
   }
   if (policy == Policy::Unknown && pointer_pos < parent_bplus_page->GetSize() - 1) {
     auto right_page_id = parent_pairs[pointer_pos + 1].second;
     auto *right_page = buffer_pool_manager_->FetchPage(right_page_id);
-    right_page->RLatch();
+    right_page->WLatch();
     auto *right_bplus_page = reinterpret_cast<BPlusTreePage *>(right_page->GetData());
     if (right_bplus_page->MoreThanMin()) {
       policy = Policy::BorrowFromRight;
+    } else {
+      right_page->WUnlatch();
     }
-    right_page->RUnlatch();
     buffer_pool_manager_->UnpinPage(right_page_id, false);
   }
   if (policy == Policy::Unknown && pointer_pos > 0) {
     policy = Policy::MergeWithLeft;
+    auto left_page_id = parent_pairs[pointer_pos - 1].second;
+    auto *left_page = buffer_pool_manager_->FetchPage(left_page_id);
+    left_page->WLatch();
+    buffer_pool_manager_->UnpinPage(left_page_id, false);
   }
   if (policy == Policy::Unknown && pointer_pos < parent_bplus_page->GetSize() - 1) {
     policy = Policy::MergeWithRight;
+    auto right_page_id = parent_pairs[pointer_pos + 1].second;
+    auto *right_page = buffer_pool_manager_->FetchPage(right_page_id);
+    right_page->WLatch();
+    buffer_pool_manager_->UnpinPage(right_page_id, false);
   }
 
-  parent_page->RUnlatch();
   buffer_pool_manager_->UnpinPage(parent_page_id, false);
   assert(policy != Policy::Unknown);
   return policy;
@@ -790,7 +801,6 @@ auto BPLUSTREE_TYPE::NewRootPage(page_id_t &root_page_id) -> InternalPage * {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, Transaction *transaction) -> Page * {
-  fake_parent_of_root_.RLock();
   Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
   auto bplus_page = reinterpret_cast<BPlusTreePage *>(page->GetData());
   if (bplus_page->IsLeafPage() && need_wlatch_at_leaf) {
@@ -799,7 +809,8 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, 
     page->RLatch();
   }
   fake_parent_of_root_.RUnlock();
-      if (transaction != nullptr) {
+
+  if (transaction != nullptr) {
     // transaction->LockTxn();
     transaction->AddIntoPageSet(page);
     // transaction->UnlockTxn();
@@ -825,8 +836,6 @@ auto BPLUSTREE_TYPE::FindLeafPage(const KeyType &key, bool need_wlatch_at_leaf, 
     UNLATCH_UNPIN(page, R, false);
     page = next_page;
   }
-  // printf("id: %d, key: ", page->GetPageId());
-  // std::cout << key << std::endl;
   return page;
 }
 
