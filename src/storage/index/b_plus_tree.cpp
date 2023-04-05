@@ -296,7 +296,7 @@ void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &ke
   } else {
     /* needs to split */
     auto max_size = parent_internal->GetMaxSize();
-    assert(parent_size == max_size - 1);
+    assert(parent_size == max_size);
     // create new internal page
     page_id_t new_internal_page_id;
     Page *new_internal_page = buffer_pool_manager_->NewPage(&new_internal_page_id);
@@ -319,8 +319,7 @@ void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &ke
     std::copy(old_pairs + i, old_pairs + parent_size, temp_pairs.begin() + i + 1);
     temp_pairs[i] = std::make_pair(key, right_child->GetPageId());
     auto old_internal_size = (max_size + 1) / 2;
-    auto new_internal_size = max_size - old_internal_size;
-    printf("\x1b[1;34m%d, %d, %d, %d\x1b[0m\n", old_internal_size, new_internal_size, internal_max_size_, new_internal_page_id);
+    auto new_internal_size = max_size + 1 - old_internal_size;
     std::copy(temp_pairs.begin(), temp_pairs.begin() + old_internal_size, old_pairs);
     std::copy(temp_pairs.begin() + old_internal_size, temp_pairs.end(), new_pairs);
     // update size

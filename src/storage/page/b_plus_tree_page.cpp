@@ -60,7 +60,13 @@ auto BPlusTreePage::GetMinSize() const -> int {
   return (max_size_ + 2 - 1) / 2;  // ceil(max_size/2)
 }
 
-auto BPlusTreePage::SafeToInsert() const -> bool { return size_ < max_size_ - 1; }
+auto BPlusTreePage::SafeToInsert() const -> bool {
+  if (IsLeafPage()) {
+    return size_ < max_size_ - 1;
+  }
+  // internal page
+  return size_ < max_size_;
+}
 
 auto BPlusTreePage::SafeToRemove() const -> bool { return size_ > GetMinSize(); }
 
