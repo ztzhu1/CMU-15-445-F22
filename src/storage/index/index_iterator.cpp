@@ -53,7 +53,9 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
       curr_page_ = nullptr;
       buffer_pool_manager_ = nullptr;
     } else {
-      curr_page_ = reinterpret_cast<LeafPage *>(buffer_pool_manager_->FetchPage(next_id)->GetData());
+      auto *page = buffer_pool_manager_->FetchPage(next_id);
+      assert(page != nullptr);
+      curr_page_ = reinterpret_cast<LeafPage *>(page->GetData());
     }
   } else {
     ++curr_index_;

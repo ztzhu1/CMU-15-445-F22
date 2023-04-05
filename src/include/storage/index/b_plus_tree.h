@@ -13,6 +13,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "concurrency/transaction.h"
@@ -81,9 +82,10 @@ class BPlusTree {
 
   auto FindLeaf(const KeyType &key, Transaction *transaction = nullptr) -> std::optional<LeafPage *>;
 
-  void InsertInLeaf(LeafPage *leaf, const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
+  auto InsertInLeaf(LeafPage *leaf, const KeyType &key, const ValueType &value, Transaction *transaction = nullptr)
+      -> bool;
 
-  void InsertInParent(BPlusTreePage *bplus_page, const KeyType &key, BPlusTreePage *new_bplus_page,
+  void InsertInParent(BPlusTreePage *left_child, const KeyType &key, BPlusTreePage *right_child,
                       Transaction *transaction = nullptr);
 
   inline auto LT(const KeyType &a, const KeyType &b) const -> bool;  // less than
@@ -108,6 +110,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  std::mutex test_mu_;
 };
 
 }  // namespace bustub
