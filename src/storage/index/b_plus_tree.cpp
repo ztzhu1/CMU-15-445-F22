@@ -158,7 +158,18 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  auto *page = buffer_pool_manager_->FetchPage(root_page_id_);
+  auto *bplus_page = ToBPlusPage<BPlusTreePage>(page);
+  while (!bplus_page->IsLeafPage()) {
+    auto *internal_page = reinterpret_cast<InternalPage *>(bplus_page);
+    auto id = internal_page->GetPairs()[0].second;
+    buffer_pool_manager_->UnpinPage(id, false);
+    page = buffer_pool_manager_->FetchPage(id);
+    bplus_page = ToBPlusPage<BPlusTreePage>(page);
+  }
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, reinterpret_cast<LeafPage *>(bplus_page), 0);
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -166,7 +177,22 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  auto leaf_opt = FindLeaf(key);
+  if (!leaf_opt.has_value()) {
+    return INDEXITERATOR_TYPE();
+  }
+  auto *leaf = leaf_opt.value();
+  auto size = leaf->GetSize();
+  int i = 0;
+  for (; i < size; ++i) {
+    if (Equal(key, leaf->GetPairs()[i].first)) {
+      break;
+    }
+  }
+  assert(i < size);
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, leaf, i);
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end
