@@ -7,6 +7,12 @@
 #include "storage/page/header_page.h"
 
 namespace bustub {
+
+template <typename BPlusPageType>
+inline auto ToBPlusPage(Page *page) -> BPlusPageType * {
+  return reinterpret_cast<BPlusPageType *>(page->GetData());
+}
+
 INDEX_TEMPLATE_ARGUMENTS
 BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
                           int leaf_max_size, int internal_max_size)
@@ -21,7 +27,8 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
  * Helper function to decide whether current b+tree is empty
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
+auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_PAGE_ID; }
+
 /*****************************************************************************
  * SEARCH
  *****************************************************************************/
@@ -32,7 +39,23 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  return false;
+  auto leaf_opt = FindLeaf(key, transaction);
+  if (!leaf_opt.has_value()) {
+    // empty
+    return false;
+  }
+  auto *leaf = leaf_opt.value();
+  auto size = leaf->GetSize();
+  auto *pairs = leaf->GetPairs();
+  int i = 0;
+  for (; i < size; ++i) {
+    if (Equal(key, pairs[i].first)) {
+      result->push_back(pairs[i].second);
+      break;
+    }
+  }
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+  return i < size;
 }
 
 /*****************************************************************************
@@ -47,7 +70,70 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  return false;
+  auto leaf_opt = FindLeaf(key, transaction);
+  if (!leaf_opt.has_value()) {
+    /* empty */
+    Page *root_page = buffer_pool_manager_->NewPage(&root_page_id_);
+    UpdateRootPageId(1);
+
+    auto *leaf = ToBPlusPage<LeafPage>(root_page);
+    leaf->Init(root_page_id_, INVALID_PAGE_ID, leaf_max_size_);
+    auto *pairs = leaf->GetPairs();
+    pairs[0] = std::make_pair(key, value);
+    leaf->IncreaseSize(1);
+    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+    return true;
+  }
+
+  auto *leaf = leaf_opt.value();
+  if (leaf->SafeToInsert()) {
+    /* not full after insertion */
+    InsertInLeaf(leaf, key, value, transaction);
+    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+    return true;
+  }
+  /* needs to split */
+  auto size = leaf->GetSize();
+  auto max_size = leaf->GetMaxSize();
+  assert(size == max_size - 1);
+  // create new leaf
+  page_id_t new_page_id;
+  Page *new_page = buffer_pool_manager_->NewPage(&new_page_id);
+  auto *new_leaf = ToBPlusPage<LeafPage>(new_page);
+  new_leaf->Init(new_page_id, leaf->GetParentPageId(), leaf_max_size_);
+  // find inserting position
+  auto *old_pairs = leaf->GetPairs();
+  auto *new_pairs = new_leaf->GetPairs();
+  int i = 0;
+  for (; i < size; ++i) {
+    assert(!Equal(key, old_pairs[i].first));  // no repetitive keys
+    if (LT(key, old_pairs[i].first)) {
+      break;
+    }
+  }
+  // move entries
+  std::vector<MappingType> temp_pairs(size + 1);
+  std::copy(old_pairs, old_pairs + i, temp_pairs.begin());
+  std::copy(old_pairs + i, old_pairs + size, temp_pairs.begin() + i + 1);
+  temp_pairs[i] = std::make_pair(key, value);
+
+  auto new_leaf_size = max_size / 2;
+  auto old_leaf_size = max_size - new_leaf_size;
+  std::copy(temp_pairs.begin(), temp_pairs.begin() + old_leaf_size, old_pairs);
+  std::copy(temp_pairs.begin() + old_leaf_size, temp_pairs.end(), new_pairs);
+  // update size
+  leaf->SetSize(old_leaf_size);
+  new_leaf->SetSize(new_leaf_size);
+  // update link
+  new_leaf->SetNextPageId(leaf->GetNextPageId());
+  leaf->SetNextPageId(new_leaf->GetPageId());
+  // update parent internal page
+  InsertInParent(reinterpret_cast<BPlusTreePage *>(leaf), new_pairs[0].first,
+                 reinterpret_cast<BPlusTreePage *>(new_leaf), transaction);
+
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+  buffer_pool_manager_->UnpinPage(new_leaf->GetPageId(), true);
+  return true;
 }
 
 /*****************************************************************************
@@ -94,7 +180,7 @@ auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); 
  * @return Page id of the root of this tree
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::GetRootPageId() -> page_id_t { return 0; }
+auto BPLUSTREE_TYPE::GetRootPageId() -> page_id_t { return root_page_id_; }
 
 /*****************************************************************************
  * UTILITIES AND DEBUG
@@ -119,6 +205,162 @@ void BPLUSTREE_TYPE::UpdateRootPageId(int insert_record) {
   }
   buffer_pool_manager_->UnpinPage(HEADER_PAGE_ID, true);
 }
+
+/** caller is responsible for unpinning leaf page  */
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Transaction *transaction) -> std::optional<LeafPage *> {
+  if (IsEmpty()) {
+    return std::nullopt;
+  }
+  auto id = root_page_id_;
+  Page *page = buffer_pool_manager_->FetchPage(id);
+  auto *bplus_page = ToBPlusPage<BPlusTreePage>(page);
+  while (!bplus_page->IsLeafPage()) {
+    auto size = bplus_page->GetSize();
+    auto *internal = reinterpret_cast<InternalPage *>(bplus_page);
+    auto *pairs = internal->GetPairs();
+    int i = 1;
+    for (; i < size; ++i) {
+      if (LT(key, pairs[i].first)) {
+        break;
+      }
+    }
+    auto next_id = pairs[i - 1].second;
+    buffer_pool_manager_->UnpinPage(id, false);
+
+    id = next_id;
+    page = buffer_pool_manager_->FetchPage(id);
+    bplus_page = ToBPlusPage<BPlusTreePage>(page);
+  }
+  return reinterpret_cast<LeafPage *>(bplus_page);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::InsertInLeaf(LeafPage *leaf, const KeyType &key, const ValueType &value,
+                                  Transaction *transaction) {
+  assert(!leaf->Full());
+  auto *pairs = leaf->GetPairs();
+  auto size = leaf->GetSize();
+  int i = 0;
+  for (; i < size; ++i) {
+    assert(!Equal(key, pairs[i].first));
+    if (LT(key, pairs[i].first)) {
+      break;
+    }
+  }
+  std::memmove(pairs + i + 1, pairs + i, (size - i) * sizeof(MappingType));
+  pairs[i] = std::make_pair(key, value);
+  leaf->IncreaseSize(1);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &key, BPlusTreePage *right_child,
+                                    Transaction *transaction) {
+  if (left_child->IsRootPage()) {
+    Page *new_root_page = buffer_pool_manager_->NewPage(&root_page_id_);
+    UpdateRootPageId(0);
+    auto *new_root_internal = ToBPlusPage<InternalPage>(new_root_page);
+    new_root_internal->Init(root_page_id_, INVALID_PAGE_ID, internal_max_size_);
+    auto *pairs = new_root_internal->GetPairs();
+    pairs[0].second = left_child->GetPageId();
+    pairs[1] = std::make_pair(key, right_child->GetPageId());
+    new_root_internal->SetSize(2);
+    left_child->SetParentPageId(root_page_id_);
+    right_child->SetParentPageId(root_page_id_);
+    buffer_pool_manager_->UnpinPage(root_page_id_, true);
+    return;
+  }
+  /* not root page */
+  auto parent_id = left_child->GetParentPageId();
+  Page *parent_page = buffer_pool_manager_->FetchPage(parent_id);
+  auto *parent_internal = ToBPlusPage<InternalPage>(parent_page);
+  auto *parent_pairs = parent_internal->GetPairs();
+  auto parent_size = parent_internal->GetSize();
+  if (parent_internal->SafeToInsert()) {
+    /* insert into parent directly */
+    // find inserting position
+    int i = 0;
+    for (; i < parent_size; ++i) {
+      if (parent_pairs[i].second == left_child->GetPageId()) {
+        break;
+      }
+    }
+    assert(i < parent_size);
+    ++i;
+    std::memmove(parent_pairs + i + 1, parent_pairs + i, (parent_size - i) * sizeof(InternalMappingType));
+    parent_pairs[i] = std::make_pair(key, right_child->GetPageId());
+    parent_internal->IncreaseSize(1);
+    assert(left_child->GetParentPageId() == parent_id);
+    right_child->SetParentPageId(parent_id);
+    buffer_pool_manager_->UnpinPage(parent_id, true);
+  } else {
+    /* needs to split */
+    auto max_size = parent_internal->GetMaxSize();
+    assert(parent_size == max_size - 1);
+    // create new internal page
+    page_id_t new_internal_page_id;
+    Page *new_internal_page = buffer_pool_manager_->NewPage(&new_internal_page_id);
+    auto *new_internal = ToBPlusPage<InternalPage>(new_internal_page);
+    new_internal->Init(new_internal_page_id, INVALID_PAGE_ID, internal_max_size_);
+    // find inserting position
+    auto *old_pairs = parent_internal->GetPairs();
+    auto *new_pairs = new_internal->GetPairs();
+    int i = 0;
+    for (; i < parent_size; ++i) {
+      if (parent_pairs[i].second == left_child->GetPageId()) {
+        break;
+      }
+    }
+    assert(i < parent_size);
+    ++i;
+    // move entries
+    std::vector<InternalMappingType> temp_pairs(parent_size + 1);
+    std::copy(old_pairs, old_pairs + i, temp_pairs.begin());
+    std::copy(old_pairs + i, old_pairs + parent_size, temp_pairs.begin() + i + 1);
+    temp_pairs[i] = std::make_pair(key, right_child->GetPageId());
+    auto old_internal_size = (max_size + 1) / 2;
+    auto new_internal_size = max_size - old_internal_size;
+    printf("\x1b[1;34m%d, %d, %d, %d\x1b[0m\n", old_internal_size, new_internal_size, internal_max_size_, new_internal_page_id);
+    std::copy(temp_pairs.begin(), temp_pairs.begin() + old_internal_size, old_pairs);
+    std::copy(temp_pairs.begin() + old_internal_size, temp_pairs.end(), new_pairs);
+    // update size
+    parent_internal->SetSize(old_internal_size);
+    new_internal->SetSize(new_internal_size);
+    // update children's parents
+    for (i = 0; i < old_internal_size; ++i) {
+      auto *child_page = buffer_pool_manager_->FetchPage(old_pairs[i].second);
+      auto *child_bplus_page = ToBPlusPage<BPlusTreePage>(child_page);
+      child_bplus_page->SetParentPageId(parent_internal->GetPageId());
+      buffer_pool_manager_->UnpinPage(child_bplus_page->GetPageId(), true);
+    }
+    for (i = 0; i < new_internal_size; ++i) {
+      auto *child_page = buffer_pool_manager_->FetchPage(new_pairs[i].second);
+      auto *child_bplus_page = ToBPlusPage<BPlusTreePage>(child_page);
+      child_bplus_page->SetParentPageId(new_internal->GetPageId());
+      buffer_pool_manager_->UnpinPage(child_bplus_page->GetPageId(), true);
+    }
+
+    InsertInParent(reinterpret_cast<BPlusTreePage *>(parent_internal), new_pairs[0].first,
+                   reinterpret_cast<BPlusTreePage *>(new_internal));
+    buffer_pool_manager_->UnpinPage(parent_internal->GetPageId(), true);
+    buffer_pool_manager_->UnpinPage(new_internal->GetPageId(), true);
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+inline auto BPLUSTREE_TYPE::LT(const KeyType &a, const KeyType &b) const -> bool { return comparator_(a, b) < 0; }
+
+INDEX_TEMPLATE_ARGUMENTS
+inline auto BPLUSTREE_TYPE::LE(const KeyType &a, const KeyType &b) const -> bool { return comparator_(a, b) <= 0; }
+
+INDEX_TEMPLATE_ARGUMENTS
+inline auto BPLUSTREE_TYPE::Equal(const KeyType &a, const KeyType &b) const -> bool { return comparator_(a, b) == 0; }
+
+INDEX_TEMPLATE_ARGUMENTS
+inline auto BPLUSTREE_TYPE::GT(const KeyType &a, const KeyType &b) const -> bool { return comparator_(a, b) > 0; }
+
+INDEX_TEMPLATE_ARGUMENTS
+inline auto BPLUSTREE_TYPE::GE(const KeyType &a, const KeyType &b) const -> bool { return comparator_(a, b) >= 0; }
 
 /*
  * This method is used for test only

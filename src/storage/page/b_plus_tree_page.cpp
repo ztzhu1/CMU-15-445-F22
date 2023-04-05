@@ -63,6 +63,12 @@ auto BPlusTreePage::GetMinSize() const -> int {
 auto BPlusTreePage::SafeToInsert() const -> bool { return size_ < max_size_ - 1; }
 
 auto BPlusTreePage::SafeToRemove() const -> bool { return size_ > GetMinSize(); }
+
+auto BPlusTreePage::Full() const -> bool {
+  assert(size_ <= max_size_);
+  return size_ == max_size_;
+}
+
 /*
  * Helper methods to get/set parent page id
  */

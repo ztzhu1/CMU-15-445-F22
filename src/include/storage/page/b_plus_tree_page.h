@@ -57,6 +57,7 @@ class BPlusTreePage {
   auto GetMinSize() const -> int;
   auto SafeToInsert() const -> bool;
   auto SafeToRemove() const -> bool;
+  auto Full() const -> bool;
 
   auto GetParentPageId() const -> page_id_t;
   void SetParentPageId(page_id_t parent_page_id);

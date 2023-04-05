@@ -27,6 +27,7 @@ namespace bustub {
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
+  assert(max_size>=3);
   SetPageType(IndexPageType::INTERNAL_PAGE);
   SetSize(0);
   SetMaxSize(max_size);
@@ -40,19 +41,14 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   // replace with your own code
-  assert(GetSize() >= GetMinSize());
-  assert(index > 0);
+  assert(index >= 1);
   assert(index < GetSize());
   return array_[index].first;
 }
 
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  assert(GetSize() >= GetMinSize());
-  assert(index > 0);
-  assert(index < GetSize());
-  array_[index].first = key;
-}
+// INDEX_TEMPLATE_ARGUMENTS
+// void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
+// }
 
 /*
  * Helper method to get the value associated with input "index"(a.k.a array
@@ -60,7 +56,6 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
-  assert(GetSize() >= GetMinSize());
   assert(index >= 0);
   assert(index < GetSize());
   return array_[index].second;

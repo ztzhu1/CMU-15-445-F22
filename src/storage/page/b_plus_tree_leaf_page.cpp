@@ -52,7 +52,6 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) { next_pa
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   // replace with your own code
-  assert(GetSize() >= GetMinSize());
   assert(index >= 0);
   assert(index < GetSize());
   return array_[index].first;

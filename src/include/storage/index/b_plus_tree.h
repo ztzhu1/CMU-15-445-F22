@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#include <optional>
 #include <queue>
 #include <string>
 #include <vector>
@@ -36,6 +37,7 @@ namespace bustub {
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator>;
+  using InternalMappingType = std::pair<KeyType, page_id_t>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
 
  public:
@@ -76,6 +78,23 @@ class BPlusTree {
 
  private:
   void UpdateRootPageId(int insert_record = 0);
+
+  auto FindLeaf(const KeyType &key, Transaction *transaction = nullptr) -> std::optional<LeafPage *>;
+
+  void InsertInLeaf(LeafPage *leaf, const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
+
+  void InsertInParent(BPlusTreePage *bplus_page, const KeyType &key, BPlusTreePage *new_bplus_page,
+                      Transaction *transaction = nullptr);
+
+  inline auto LT(const KeyType &a, const KeyType &b) const -> bool;  // less than
+
+  inline auto LE(const KeyType &a, const KeyType &b) const -> bool;  // less or equal
+
+  inline auto Equal(const KeyType &a, const KeyType &b) const -> bool;
+
+  inline auto GT(const KeyType &a, const KeyType &b) const -> bool;  // greater than
+
+  inline auto GE(const KeyType &a, const KeyType &b) const -> bool;  // greater or equal
 
   /* Debug Routines for FREE!! */
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
