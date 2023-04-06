@@ -38,8 +38,9 @@ namespace bustub {
 INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator>;
-  using InternalMappingType = std::pair<KeyType, page_id_t>;
+  using IntPairType = std::pair<KeyType, page_id_t>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
+  using LeafPairType = std::pair<KeyType, ValueType>;
 
  public:
   explicit BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
@@ -87,6 +88,8 @@ class BPlusTree {
 
   void InsertInParent(BPlusTreePage *left_child, const KeyType &key, BPlusTreePage *right_child,
                       Transaction *transaction = nullptr);
+
+  void RemoveEntry(BPlusTreePage *bplus_page, const KeyType &key, Transaction *transaction = nullptr);
 
   inline auto LT(const KeyType &a, const KeyType &b) const -> bool;  // less than
 

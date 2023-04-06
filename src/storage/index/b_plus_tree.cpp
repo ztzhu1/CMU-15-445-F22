@@ -128,7 +128,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
     }
   }
   // move entries
-  std::vector<MappingType> temp_pairs(size + 1);
+  std::vector<LeafPairType> temp_pairs(size + 1);
   std::copy(old_pairs, old_pairs + i, temp_pairs.begin());
   std::copy(old_pairs + i, old_pairs + size, temp_pairs.begin() + i + 1);
   temp_pairs[i] = std::make_pair(key, value);
@@ -160,7 +160,15 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
  * necessary.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
+void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  std::lock_guard g(test_mu_);
+  auto leaf_opt = FindLeaf(key, transaction);
+  if (!leaf_opt.has_value()) {
+    /* empty */
+    return;
+  }
+  RemoveEntry(reinterpret_cast<BPlusTreePage *>(leaf_opt.value()), key, transaction);
+}
 
 /*****************************************************************************
  * INDEX ITERATOR
@@ -294,7 +302,7 @@ auto BPLUSTREE_TYPE::InsertInLeaf(LeafPage *leaf, const KeyType &key, const Valu
       break;
     }
   }
-  std::memmove(static_cast<void *>(pairs + i + 1), static_cast<void *>(pairs + i), (size - i) * sizeof(MappingType));
+  std::memmove(static_cast<void *>(pairs + i + 1), static_cast<void *>(pairs + i), (size - i) * sizeof(LeafPairType));
   pairs[i] = std::make_pair(key, value);
   leaf->IncreaseSize(1);
   return true;
@@ -339,7 +347,7 @@ void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &ke
     assert(i < parent_size);
     ++i;
     std::memmove(static_cast<void *>(parent_pairs + i + 1), static_cast<void *>(parent_pairs + i),
-                 (parent_size - i) * sizeof(InternalMappingType));
+                 (parent_size - i) * sizeof(IntPairType));
     parent_pairs[i] = std::make_pair(key, right_child->GetPageId());
     parent_internal->IncreaseSize(1);
     assert(left_child->GetParentPageId() == parent_id);
@@ -369,7 +377,7 @@ void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &ke
     assert(i < parent_size);
     ++i;
     // move entries
-    std::vector<InternalMappingType> temp_pairs(parent_size + 1);
+    std::vector<IntPairType> temp_pairs(parent_size + 1);
     std::copy(old_pairs, old_pairs + i, temp_pairs.begin());
     std::copy(old_pairs + i, old_pairs + parent_size, temp_pairs.begin() + i + 1);
     temp_pairs[i] = std::make_pair(key, right_child->GetPageId());
@@ -400,6 +408,207 @@ void BPLUSTREE_TYPE::InsertInParent(BPlusTreePage *left_child, const KeyType &ke
     buffer_pool_manager_->UnpinPage(right_child->GetPageId(), true);
     InsertInParent(reinterpret_cast<BPlusTreePage *>(parent_internal), new_pairs[0].first,
                    reinterpret_cast<BPlusTreePage *>(new_internal));
+  }
+}
+
+/** callee(i.e. this function) is responsible for unpinning bplus page  */
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::RemoveEntry(BPlusTreePage *bplus_page, const KeyType &key, Transaction *transaction) {
+  int size = bplus_page->GetSize();
+  int size_of_pair = 0;
+  int i = 0;
+  LeafPairType *leaf_pairs = nullptr;
+  IntPairType *int_pairs = nullptr;
+  if (bplus_page->IsLeafPage()) {
+    i = 0;
+    leaf_pairs = reinterpret_cast<LeafPage *>(bplus_page)->GetPairs();
+    size_of_pair = sizeof(LeafPairType);
+  } else {
+    i = 1;
+    int_pairs = reinterpret_cast<InternalPage *>(bplus_page)->GetPairs();
+    size_of_pair = sizeof(IntPairType);
+  }
+  for (; i < size; ++i) {
+    if (Equal(key, bplus_page->IsLeafPage() ? leaf_pairs[i].first : int_pairs[i].first)) {
+      break;
+    }
+  }
+  if (i >= size) {
+    // key doesn't exist
+    buffer_pool_manager_->UnpinPage(bplus_page->GetPageId(), true);
+    return;
+  }
+  if (bplus_page->SafeToRemove()) {
+    /* easy */
+    if (bplus_page->IsLeafPage()) {
+      std::memmove(leaf_pairs + i, leaf_pairs + i + 1, (size - i - 1) * size_of_pair);
+    } else {
+      std::memmove(int_pairs + i, int_pairs + i + 1, (size - i - 1) * size_of_pair);
+    }
+    bplus_page->DecreaseSize(1);
+    buffer_pool_manager_->UnpinPage(bplus_page->GetPageId(), true);
+    return;
+  }
+  /* needs to borrow or merge */
+  if (bplus_page->IsRootPage()) {
+    if (bplus_page->IsLeafPage()) {
+      /* the tree will be empty after deletion */
+      assert(size == 1);
+      root_page_id_ = INVALID_PAGE_ID;
+      UpdateRootPageId(0);
+    } else {
+      assert(size == 2);
+      auto child_id = int_pairs[0].second;
+      auto *child_page = buffer_pool_manager_->FetchPage(child_id);
+      auto *child_bplus = ToBPlusPage<BPlusTreePage>(child_page);
+      child_bplus->SetParentPageId(INVALID_PAGE_ID);
+      root_page_id_ = child_id;
+      UpdateRootPageId(0);
+      buffer_pool_manager_->UnpinPage(child_id, true);
+    }
+    buffer_pool_manager_->UnpinPage(bplus_page->GetPageId(), true);
+    return;
+  }
+  /* not root page */
+  auto bplus_id = bplus_page->GetPageId();
+  auto parent_id = bplus_page->GetParentPageId();
+  auto *parent_page = buffer_pool_manager_->FetchPage(parent_id);
+  auto *parent_int = ToBPlusPage<InternalPage>(parent_page);
+  auto *parent_pairs = parent_int->GetPairs();
+  auto parent_size = parent_int->GetSize();
+  int j = 0;
+  for (; j < parent_size; ++j) {
+    if (bplus_id == parent_pairs[j].second) {
+      break;
+    }
+  }
+  assert(j < parent_size);
+  if (j > 0) {
+    auto sibling_id = parent_pairs[j - 1].second;
+    auto *sibling_page = buffer_pool_manager_->FetchPage(sibling_id);
+    auto *sibling_bplus = ToBPlusPage<BPlusTreePage>(sibling_page);
+    if (sibling_bplus->SafeToRemove()) {
+      /* borrow from left */
+      if (sibling_bplus->IsInternalPage()) {
+        auto *sibling_int = reinterpret_cast<InternalPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_int->GetPairs();
+        int m = sibling_int->GetSize() - 1;
+        std::memmove(int_pairs + 1, int_pairs, i * size_of_pair);
+        int_pairs[0].second = sibling_pairs[m].second;
+        int_pairs[1].first = parent_pairs[j].first;
+        parent_pairs[j].first = sibling_pairs[m].first;
+        sibling_int->DecreaseSize(1);
+        auto *child_page = buffer_pool_manager_->FetchPage(sibling_pairs[m].second);
+        auto *child_bplus = ToBPlusPage<BPlusTreePage>(child_page);
+        child_bplus->SetParentPageId(bplus_page->GetPageId());
+        buffer_pool_manager_->UnpinPage(child_bplus->GetPageId(), true);
+      } else { /* leaf page */
+        auto *sibling_leaf = reinterpret_cast<LeafPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_leaf->GetPairs();
+        int m = sibling_leaf->GetSize() - 1;
+        std::memmove(leaf_pairs + 1, leaf_pairs, i * size_of_pair);
+        leaf_pairs[0].first = sibling_pairs[m].first;
+        leaf_pairs[0].second = sibling_pairs[m].second;
+        parent_pairs[j].first = sibling_pairs[m].first;
+        bplus_page->IncreaseSize(1);
+        sibling_leaf->DecreaseSize(1);
+      }
+      buffer_pool_manager_->UnpinPage(parent_id, true);
+      buffer_pool_manager_->UnpinPage(bplus_id, true);
+      buffer_pool_manager_->UnpinPage(sibling_id, true);
+    } else {
+      /* merge with left */
+      if (sibling_bplus->IsInternalPage()) {
+        auto *sibling_int = reinterpret_cast<InternalPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_int->GetPairs();
+        int m = sibling_int->GetSize();
+        std::memcpy(sibling_pairs + m, leaf_pairs, i * size_of_pair);
+        std::memcpy(sibling_pairs + m + i, leaf_pairs + i + 1, (size - i - 1) * size_of_pair);
+        bplus_page->DecreaseSize(size);
+        sibling_int->IncreaseSize(size - 1);
+        for (int k = m; k < m + size - 1; ++k) {
+          auto *child_page = buffer_pool_manager_->FetchPage(sibling_pairs[k].second);
+          auto *child_bplus = ToBPlusPage<BPlusTreePage>(child_page);
+          child_bplus->SetParentPageId(sibling_int->GetPageId());
+          buffer_pool_manager_->UnpinPage(child_bplus->GetPageId(), true);
+        }
+      } else { /* leaf page */
+        auto *sibling_leaf = reinterpret_cast<LeafPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_leaf->GetPairs();
+        int m = sibling_leaf->GetSize();
+        std::memcpy(sibling_pairs + m, leaf_pairs, i * size_of_pair);
+        std::memcpy(sibling_pairs + m + i, leaf_pairs + i + 1, (size - i - 1) * size_of_pair);
+        bplus_page->DecreaseSize(size);
+        sibling_leaf->IncreaseSize(size + 1);
+        sibling_leaf->SetNextPageId(reinterpret_cast<LeafPage *>(bplus_page)->GetNextPageId());
+      }
+      buffer_pool_manager_->UnpinPage(bplus_id, true);
+      buffer_pool_manager_->UnpinPage(sibling_id, true);
+      RemoveEntry(ToBPlusPage<BPlusTreePage>(parent_page), parent_pairs[j].first, transaction);
+    }
+  } else {
+    auto sibling_id = parent_pairs[j + 1].second;
+    auto *sibling_page = buffer_pool_manager_->FetchPage(sibling_id);
+    auto *sibling_bplus = ToBPlusPage<BPlusTreePage>(sibling_page);
+    if (sibling_bplus->SafeToRemove()) {
+      /* borrow from right */
+      if (sibling_bplus->IsInternalPage()) {
+        auto *sibling_int = reinterpret_cast<InternalPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_int->GetPairs();
+        std::memmove(int_pairs + i, int_pairs + i + 1, (size - i - 1) * size_of_pair);
+        int_pairs[size - 1].first = parent_pairs[j].first;
+        int_pairs[size - 1].second = sibling_pairs[0].second;
+        parent_pairs[j].first = sibling_pairs[1].first;
+        std::memmove(sibling_pairs, sibling_pairs + 1, (sibling_int->GetSize() - 1) * size_of_pair);
+        sibling_int->DecreaseSize(1);
+        auto *child_page = buffer_pool_manager_->FetchPage(int_pairs[size - 1].second);
+        auto *child_bplus = ToBPlusPage<BPlusTreePage>(child_page);
+        child_bplus->SetParentPageId(bplus_page->GetPageId());
+        buffer_pool_manager_->UnpinPage(child_bplus->GetPageId(), true);
+      } else { /* leaf page */
+        auto *sibling_leaf = reinterpret_cast<LeafPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_leaf->GetPairs();
+        std::memmove(leaf_pairs + i, leaf_pairs + i + 1, (size - i - 1) * size_of_pair);
+        leaf_pairs[size - 1].first = sibling_pairs[0].first;
+        leaf_pairs[size - 1].second = sibling_pairs[0].second;
+        parent_pairs[j].first = sibling_pairs[1].first;
+        std::memmove(sibling_pairs, sibling_pairs + 1, (sibling_leaf->GetSize() - 1) * size_of_pair);
+        sibling_leaf->DecreaseSize(1);
+      }
+      buffer_pool_manager_->UnpinPage(parent_id, true);
+      buffer_pool_manager_->UnpinPage(bplus_id, true);
+      buffer_pool_manager_->UnpinPage(sibling_id, true);
+    } else {
+      /* merge with right */
+      if (sibling_bplus->IsInternalPage()) {
+        auto *sibling_int = reinterpret_cast<InternalPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_int->GetPairs();
+        auto sibling_size = sibling_int->GetSize();
+        std::memmove(int_pairs + i, int_pairs + i + 1, (size - i - 1) * size_of_pair);
+        std::memcpy(int_pairs + size - 1, sibling_pairs, sibling_size * size_of_pair);
+        bplus_page->IncreaseSize(sibling_size - 1);
+        sibling_int->DecreaseSize(sibling_size);
+        for (int k = size - 1; k < size - 1 + sibling_size; ++k) {
+          auto *child_page = buffer_pool_manager_->FetchPage(int_pairs[k].second);
+          auto *child_bplus = ToBPlusPage<BPlusTreePage>(child_page);
+          child_bplus->SetParentPageId(bplus_page->GetPageId());
+          buffer_pool_manager_->UnpinPage(child_bplus->GetPageId(), true);
+        }
+      } else { /* leaf page */
+        auto *sibling_leaf = reinterpret_cast<LeafPage *>(sibling_bplus);
+        auto *sibling_pairs = sibling_leaf->GetPairs();
+        auto sibling_size = sibling_leaf->GetSize();
+        std::memmove(leaf_pairs + i, leaf_pairs + i + 1, (size - i - 1) * size_of_pair);
+        std::memcpy(leaf_pairs + size - 1, sibling_pairs, sibling_size * size_of_pair);
+        bplus_page->IncreaseSize(sibling_size - 1);
+        sibling_leaf->DecreaseSize(sibling_size);
+        reinterpret_cast<LeafPage *>(bplus_page)
+            ->SetNextPageId(reinterpret_cast<LeafPage *>(sibling_leaf)->GetNextPageId());
+      }
+      buffer_pool_manager_->UnpinPage(bplus_id, true);
+      buffer_pool_manager_->UnpinPage(sibling_id, true);
+      RemoveEntry(ToBPlusPage<BPlusTreePage>(parent_page), parent_pairs[j].first, transaction);
+    }
   }
 }
 
