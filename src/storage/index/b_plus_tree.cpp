@@ -249,6 +249,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  if (IsEmpty()) {
+    return INDEXITERATOR_TYPE();
+  }
   auto *page = buffer_pool_manager_->FetchPage(root_page_id_);
   assert(page != nullptr);
   auto *bplus_page = ToBPlusPage<BPlusTreePage>(page);
