@@ -95,7 +95,7 @@ class BPlusTree {
       -> bool;
 
   void InsertInParent(BPlusTreePage *left_child, const KeyType &key, BPlusTreePage *right_child,
-                      Transaction *transaction = nullptr);
+                      Transaction *transaction);
 
   void RemoveEntry(BPlusTreePage *bplus_page, const KeyType &key, Transaction *transaction = nullptr);
 
