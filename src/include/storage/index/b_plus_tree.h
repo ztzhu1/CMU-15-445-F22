@@ -81,7 +81,15 @@ class BPlusTree {
  private:
   void UpdateRootPageId(int insert_record = 0);
 
-  auto FindLeaf(const KeyType &key, Transaction *transaction = nullptr) -> std::optional<LeafPage *>;
+  /** read only */
+  auto FindLeafReadOnly(const KeyType &key, Transaction *transaction = nullptr) -> std::optional<Page *>;
+
+  /** optimistic*/
+  auto FindLeaf(const KeyType &key, Transaction *transaction) -> std::optional<LeafPage *>;
+
+  /** pessimistic*/
+  auto FindLeaf(const KeyType &key, const UpdateMode mode, Transaction *transaction)  // NOLINT
+      -> std::optional<LeafPage *>;
 
   auto InsertInLeaf(LeafPage *leaf, const KeyType &key, const ValueType &value, Transaction *transaction = nullptr)
       -> bool;
@@ -113,6 +121,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  ReaderWriterLatch fake_root_latch_;
   std::mutex test_mu_;
 };
 

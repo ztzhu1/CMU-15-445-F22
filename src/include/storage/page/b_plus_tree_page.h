@@ -26,6 +26,7 @@ namespace bustub {
 
 // define page type enum
 enum class IndexPageType { INVALID_INDEX_PAGE = 0, LEAF_PAGE, INTERNAL_PAGE };
+enum class UpdateMode { Insert, Remove };
 
 /**
  * Both internal and leaf page are inherited from this page.
@@ -57,6 +58,7 @@ class BPlusTreePage {
   auto GetMinSize() const -> int;
   auto SafeToInsert() const -> bool;
   auto SafeToRemove() const -> bool;
+  auto SafeTo(const UpdateMode policy) const -> bool;  // NOLINT
   auto Full() const -> bool;
 
   auto GetParentPageId() const -> page_id_t;

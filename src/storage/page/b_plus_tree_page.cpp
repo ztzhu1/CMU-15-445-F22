@@ -70,6 +70,16 @@ auto BPlusTreePage::SafeToInsert() const -> bool {
 
 auto BPlusTreePage::SafeToRemove() const -> bool { return size_ > GetMinSize(); }
 
+auto BPlusTreePage::SafeTo(const UpdateMode policy) const -> bool {
+  if (policy == UpdateMode::Insert) {
+    return SafeToInsert();
+  }
+  if (policy == UpdateMode::Remove) {
+    return SafeToRemove();
+  }
+  assert(false);  // unreachable
+}
+
 auto BPlusTreePage::Full() const -> bool {
   assert(size_ <= max_size_);
   return size_ == max_size_;
