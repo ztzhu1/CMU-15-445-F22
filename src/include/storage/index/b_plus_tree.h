@@ -122,7 +122,7 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   ReaderWriterLatch fake_root_latch_;
-  std::mutex test_mu_;
+  [[maybe_unused]] std::mutex test_mu_;
 };
 
 }  // namespace bustub

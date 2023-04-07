@@ -151,7 +151,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transact
      This can be optimized. */
   for (int i = 0; i < leaf->GetSize(); ++i) {
     if (Equal(key, leaf->GetPairs()[i].first)) {
-      buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+      // buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
       UNLATCH_ALL();
       return false;
     }
