@@ -4,9 +4,9 @@ B+ tree is the most painful project that I have done so far. It's not easy to do
 2. Trying to add locks under the protection of a global lock, which
 makes program run like the single-thread version. This won't examine
 synchronization and exclusion, but can help us reduce deadlock.
-3. Delete global lock to run the genuine multi-thread program.
+3. Deleting global lock to run the genuine multi-thread program.
 
-# Official Documents
+# Official Document
 
 <img src="logo/bustub-whiteborder.svg" alt="BusTub Logo" height="200">
 
