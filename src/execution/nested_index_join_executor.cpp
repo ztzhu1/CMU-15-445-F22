@@ -40,7 +40,7 @@ void NestIndexJoinExecutor::Init() {
     Schema s({Column("key", v.GetTypeId())});
     index_info->index_->ScanKey(Tuple({v}, &s), &result, exec_ctx_->GetTransaction());
     Tuple t;
-    if (result.size() != 0) {
+    if (!result.empty()) {
       inner_table_info->table_->GetTuple(result[0], &t, exec_ctx_->GetTransaction());
       right_tuples_[i] = t;
       result.clear();
@@ -67,7 +67,8 @@ auto NestIndexJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       *tuple = Tuple(values, &plan_->OutputSchema());
       ++index_;
       return true;
-    } else if (plan_->GetJoinType() == JoinType::LEFT) {
+    }
+    if (plan_->GetJoinType() == JoinType::LEFT) {
       std::vector<Value> values;
       auto *inner_table_info = exec_ctx_->GetCatalog()->GetTable(oid);
       for (uint32_t i = 0; i < left_s.GetColumnCount(); ++i) {

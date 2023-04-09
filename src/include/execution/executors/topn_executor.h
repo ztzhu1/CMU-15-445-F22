@@ -13,6 +13,8 @@
 #pragma once
 
 #include <memory>
+#include <set>
+#include <utility>
 #include <vector>
 
 #include "execution/executor_context.h"
@@ -50,7 +52,32 @@ class TopNExecutor : public AbstractExecutor {
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); }
 
  private:
+  struct TupleWrapper {
+    TupleWrapper(Tuple &tuple, std::vector<std::pair<OrderByType, AbstractExpressionRef>> *order_bys,
+                 const Schema *schema)
+        : inner_(tuple), order_bys_(order_bys), schema_(schema) {}
+    friend auto operator<(const TupleWrapper &a, const TupleWrapper &b) -> bool {
+      for (const auto &order_by : *a.order_bys_) {
+        auto &expr = order_by.second;
+        auto result = expr->Evaluate(&a.inner_, *a.schema_).CompareEquals(expr->Evaluate(&b.inner_, *b.schema_));
+        if (result == CmpBool::CmpFalse) {
+          if (order_by.first == OrderByType::DESC) {
+            return static_cast<bool>(
+                expr->Evaluate(&a.inner_, *b.schema_).CompareGreaterThan(expr->Evaluate(&b.inner_, *b.schema_)));
+          }
+          return static_cast<bool>(
+              expr->Evaluate(&a.inner_, *b.schema_).CompareLessThan(expr->Evaluate(&b.inner_, *b.schema_)));
+        }
+      }
+      return true;
+    }
+    Tuple inner_;
+    std::vector<std::pair<OrderByType, AbstractExpressionRef>> *order_bys_{};
+    const Schema *schema_;
+  };
   /** The topn plan node to be executed */
   const TopNPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  std::set<TupleWrapper> tuples_{};
 };
 }  // namespace bustub

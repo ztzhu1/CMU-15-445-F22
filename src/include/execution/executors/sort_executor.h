@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "execution/executor_context.h"
@@ -50,7 +51,29 @@ class SortExecutor : public AbstractExecutor {
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); }
 
  private:
+  struct Comparator {
+    Comparator(std::vector<std::pair<OrderByType, AbstractExpressionRef>> *order_bys, const Schema *schema)
+        : order_bys_(order_bys), schema_(schema) {}
+    inline auto operator()(const Tuple &a, const Tuple &b) -> bool {
+      for (const auto &order_by : *order_bys_) {
+        auto &expr = order_by.second;
+        auto result = expr->Evaluate(&a, *schema_).CompareEquals(expr->Evaluate(&b, *schema_));
+        if (result == CmpBool::CmpFalse) {
+          if (order_by.first == OrderByType::DESC) {
+            return static_cast<bool>(expr->Evaluate(&a, *schema_).CompareGreaterThan(expr->Evaluate(&b, *schema_)));
+          }
+          return static_cast<bool>(expr->Evaluate(&a, *schema_).CompareLessThan(expr->Evaluate(&b, *schema_)));
+        }
+      }
+      return true;
+    }
+    std::vector<std::pair<OrderByType, AbstractExpressionRef>> *order_bys_{};
+    const Schema *schema_;
+  };
   /** The sort plan node to be executed */
   const SortPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  std::vector<Tuple> tuples_{};
+  size_t index_{0};
 };
 }  // namespace bustub

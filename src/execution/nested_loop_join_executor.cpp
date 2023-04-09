@@ -47,7 +47,7 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   const auto &predicate = plan_->Predicate();
   const auto &left_s = left_executor_->GetOutputSchema();
   const auto &right_s = right_executor_->GetOutputSchema();
-  if (right_tuples_.size() == 0 && left_index_ < left_tuples_.size()) {
+  if (right_tuples_.empty() && left_index_ < left_tuples_.size()) {
     std::vector<Value> values;
     const auto &left_tuple = left_tuples_[left_index_];
     for (uint32_t i = 0; i < left_s.GetColumnCount(); ++i) {
@@ -90,7 +90,8 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
         returned_ = true;
       }
       return true;
-    } else if (plan_->GetJoinType() == JoinType::LEFT && need_return_null_) {
+    }
+    if (plan_->GetJoinType() == JoinType::LEFT && need_return_null_) {
       std::vector<Value> values;
       for (uint32_t i = 0; i < left_s.GetColumnCount(); ++i) {
         values.push_back(left_tuple.GetValue(&left_s, i));

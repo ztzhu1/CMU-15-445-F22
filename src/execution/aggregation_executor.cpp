@@ -36,14 +36,14 @@ void AggregationExecutor::Init() {
       empty_ = false;
     }
   }
-  aht_iterator_ = SimpleAggregationHashTable::Iterator(aht_.Begin());
+  aht_iterator_ = static_cast<SimpleAggregationHashTable::Iterator>(aht_.Begin());
 }
 
 auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   if (aht_iterator_ == aht_.End()) {
     if (empty_) {
       empty_ = false;
-      if (plan_->GetGroupBys().size() == 0) {
+      if (plan_->GetGroupBys().empty()) {
         std::vector<Value> values;
         for (const auto &v : aht_.GenerateInitialAggregateValue().aggregates_) {
           values.push_back(v);
