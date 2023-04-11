@@ -298,21 +298,35 @@ class LockManager {
   auto RunCycleDetection() -> void;
 
  private:
-  void CheckLockTable(Transaction *txn, TransactionState state, IsolationLevel level, LockMode mode);
+  void CheckLockTable(Transaction *txn, IsolationLevel level, LockMode mode);
 
-  void CheckUpgradeTableLock(Transaction *txn, LockMode old_mode, LockMode new_mode);
+  void CheckUpgradeLock(Transaction *txn, LockMode old_mode, LockMode new_mode);
 
-  auto CheckUnlockTable(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,
-                        table_oid_t oid) -> std::list<LockRequest *>::iterator;
+  auto CheckUnlock(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,  // NOLINT
+                   table_oid_t oid) -> std::list<LockRequest *>::iterator;
 
-  void RecordTableLock(Transaction *txn, LockMode lock_mode, const table_oid_t &oid);
+  auto CheckUnlock(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,  // NOLINT
+                   table_oid_t oid, const RID &rid) -> std::list<LockRequest *>::iterator;
+
+  void RecordLock(Transaction *txn, LockMode lock_mode, const table_oid_t &oid);
+
+  void RecordLock(Transaction *txn, LockMode lock_mode, const table_oid_t &oid, const RID &rid);
 
   auto GetTableLockSet(Transaction *txn, LockMode lock_mode) -> std::shared_ptr<std::unordered_set<table_oid_t>>;
 
+  auto GetRowLockSet(Transaction *txn, LockMode lock_mode)
+      -> std::shared_ptr<std::unordered_map<table_oid_t, std::unordered_set<RID>>>;
+
   auto Compatible(LockMode a, LockMode b) -> bool;
 
-  auto CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id, bool upgrade)
-      -> bool;
+  auto CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id,  // NOLINT
+                         bool upgrade) -> bool;
+
+  void CheckLockRow(Transaction *txn, IsolationLevel level, LockMode mode, const table_oid_t &oid);
+
+  void CheckTableLockPresent(Transaction *txn, const table_oid_t &oid, LockMode row_lock_mode);
+
+  auto TableLockPresent(Transaction *txn, const table_oid_t &oid, LockMode lock_mode) -> bool;
 
   void Abort(Transaction *txn, AbortReason reason);
 
