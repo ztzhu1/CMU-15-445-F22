@@ -57,24 +57,48 @@ auto LockManager::LockTable(Transaction *txn, LockMode lock_mode, const table_oi
       return true;
     } else {
       /* needs to upgrade */
-      CheckUpgradeTableLock(txn, request->lock_mode_, lock_mode);
+      auto old_mode = request->lock_mode_;
+      CheckUpgradeTableLock(txn, old_mode, lock_mode);
       if (queue->upgrading_ != INVALID_TXN_ID && queue->upgrading_ != txn_id) {
         // another transaction has already upgraded
         Abort(txn, AbortReason::UPGRADE_CONFLICT);
       }
       // ready to upgrade
-      // TODO
+      if (CompatibleWithAll(queue, lock_mode, txn_id, true)) {
+        auto lock_set = GetTableLockSet(txn, old_mode);
+        assert(lock_set->find(oid) != lock_set->end());
+        lock_set->erase(oid);
+        queue->upgrading_ = txn_id;
+        request->lock_mode_ = lock_mode;
+        request->granted_ = true;
+        RecordTableLock(txn, lock_mode, oid);
+        return true;
+      }
+      // the request needs to wait
+      queue->cv_.wait(lock, [&]() { return CompatibleWithAll(queue, lock_mode, txn_id, true); });
+
+      auto lock_set = GetTableLockSet(txn, old_mode);
+      assert(lock_set->find(oid) != lock_set->end());
+      lock_set->erase(oid);
+      queue->upgrading_ = txn_id;
+      request->lock_mode_ = lock_mode;
+      request->granted_ = true;
+      RecordTableLock(txn, lock_mode, oid);
+      return true;
     }
   }
   /* 2. request is not granted.
-     If the request is compatible with all preceding requests, it can be granted */
-  if (CompatibleWithAll(queue, lock_mode, txn_id)) {
+        If the request is compatible with all preceding requests, it can be granted.
+        Noting that there is a corner case: there may be one request still can hold
+      the lock due to upgrading, even if it's not compatible with the target request
+      and behind it. */
+  if (CompatibleWithAll(queue, lock_mode, txn_id, false)) {
     request->granted_ = true;
     RecordTableLock(txn, lock_mode, oid);
     return true;
   }
   // the request needs to wait
-  queue->cv_.wait(lock, [&]() { return CompatibleWithAll(queue, lock_mode, txn_id); });
+  queue->cv_.wait(lock, [&]() { return CompatibleWithAll(queue, lock_mode, txn_id, false); });
   request->granted_ = true;
   RecordTableLock(txn, lock_mode, oid);
   return true;
@@ -140,6 +164,7 @@ void LockManager::RunCycleDetection() {
 
 /* ------ private ------ */
 void LockManager::CheckLockTable(Transaction *txn, TransactionState state, IsolationLevel level, LockMode mode) {
+  assert(txn->GetState() != TransactionState::COMMITTED);
   assert(state == TransactionState::GROWING || state == TransactionState::SHRINKING);
   switch (level) {
     case IsolationLevel::REPEATABLE_READ:
@@ -168,6 +193,7 @@ void LockManager::CheckLockTable(Transaction *txn, TransactionState state, Isola
 }
 
 void LockManager::CheckUpgradeTableLock(Transaction *txn, LockMode old_mode, LockMode new_mode) {
+  assert(txn->GetState() != TransactionState::COMMITTED);
   assert(old_mode != new_mode);
   switch (old_mode) {
     case LockMode::INTENTION_SHARED:
@@ -273,17 +299,40 @@ auto LockManager::Compatible(LockMode a, LockMode b) -> bool {
   return false;
 }
 
-auto LockManager::CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id)
-    -> bool {
+auto LockManager::CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id,
+                                    bool upgrade) -> bool {
   bool comp_with_all = true;
-  for (const auto r : queue->request_queue_) {
-    if (r->txn_id_ == txn_id) {
+  auto it = queue->request_queue_.begin();
+  while (it != queue->request_queue_.end()) {
+    if ((*it)->txn_id_ == txn_id) {
       break;
     }
-    if (!Compatible(r->lock_mode_, lock_mode)) {
-      comp_with_all = false;
-      break;
+    if (!Compatible((*it)->lock_mode_, lock_mode)) {
+      if (!upgrade || (*it)->granted_) {
+        comp_with_all = false;
+        break;
+      }
     }
+    ++it;
+  }
+  assert(it != queue->request_queue_.end());
+  if (upgrade) {
+    return comp_with_all;
+  }
+
+  if (comp_with_all && queue->upgrading_ != INVALID_TXN_ID && queue->upgrading_ != txn_id) {
+    /* there is some other transaction which is upgraded */
+    while (it != queue->request_queue_.end()) {
+      if ((*it)->txn_id_ == queue->upgrading_) {
+        assert((*it)->granted_);
+        if (!Compatible((*it)->lock_mode_, lock_mode)) {
+          comp_with_all = false;
+          break;
+        }
+      }
+      ++it;
+    }
+    assert(it != queue->request_queue_.end());
   }
   return comp_with_all;
 }
@@ -294,6 +343,9 @@ void LockManager::Abort(Transaction *txn, AbortReason reason) {
 }
 
 void LockManager::UpdateState(Transaction *txn, IsolationLevel level, LockMode lock_mode) {
+  if (txn->GetState() == TransactionState::COMMITTED) {
+    return;
+  }
   if (lock_mode != LockMode::SHARED && lock_mode != LockMode::EXCLUSIVE) {
     return;
   }

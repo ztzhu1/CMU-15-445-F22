@@ -311,7 +311,8 @@ class LockManager {
 
   auto Compatible(LockMode a, LockMode b) -> bool;
 
-  auto CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id) -> bool;
+  auto CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id, bool upgrade)
+      -> bool;
 
   void Abort(Transaction *txn, AbortReason reason);
 
