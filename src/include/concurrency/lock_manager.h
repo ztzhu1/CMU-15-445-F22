@@ -298,6 +298,25 @@ class LockManager {
   auto RunCycleDetection() -> void;
 
  private:
+  void CheckLockTable(Transaction *txn, TransactionState state, IsolationLevel level, LockMode mode);
+
+  void CheckUpgradeTableLock(Transaction *txn, LockMode old_mode, LockMode new_mode);
+
+  auto CheckUnlockTable(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,
+                        table_oid_t oid) -> std::list<LockRequest *>::iterator;
+
+  void RecordTableLock(Transaction *txn, LockMode lock_mode, const table_oid_t &oid);
+
+  auto GetTableLockSet(Transaction *txn, LockMode lock_mode) -> std::shared_ptr<std::unordered_set<table_oid_t>>;
+
+  auto Compatible(LockMode a, LockMode b) -> bool;
+
+  auto CompatibleWithAll(std::shared_ptr<LockRequestQueue> queue, LockMode lock_mode, txn_id_t txn_id) -> bool;
+
+  void Abort(Transaction *txn, AbortReason reason);
+
+  void UpdateState(Transaction *txn, IsolationLevel level, LockMode lock_mode);
+
   /** Fall 2022 */
   /** Structure that holds lock requests for a given table oid */
   std::unordered_map<table_oid_t, std::shared_ptr<LockRequestQueue>> table_lock_map_;
