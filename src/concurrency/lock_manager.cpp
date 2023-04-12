@@ -337,6 +337,7 @@ void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
 }
 
 auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
+  BuildGraph();
   auto edge_list = GetEdgeList(false);
   std::sort(edge_list.begin(), edge_list.end(), [](std::pair<txn_id_t, txn_id_t> &a, std::pair<txn_id_t, txn_id_t> &b) {
     assert(a.first != a.second);
@@ -390,7 +391,7 @@ auto LockManager::GetEdgeList(bool with_latch) -> std::vector<std::pair<txn_id_t
   for (const auto &pair : waits_for_) {
     const auto t1 = pair.first;
     for (const auto &t2 : pair.second) {
-      edges.push_back(std::pair(t1, t2));
+      edges.emplace_back(std::pair(t1, t2));
     }
   }
   if (with_latch) {
@@ -405,12 +406,10 @@ void LockManager::RunCycleDetection() {
     // TODO(students): detect deadlock
     txn_id_t txn_id;
     std::lock_guard g(waits_for_latch_);
-    BuildGraph();
     while (HasCycle(&txn_id)) {
       auto txn = TransactionManager::GetTransaction(txn_id);
       txn->SetState(TransactionState::ABORTED);
       Notify(txn);
-      BuildGraph();
     }
   }
 }
