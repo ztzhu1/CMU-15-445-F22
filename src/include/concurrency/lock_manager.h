@@ -291,6 +291,7 @@ class LockManager {
    * @return all edges in current waits_for graph
    */
   auto GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>>;
+  auto GetEdgeList(bool with_latch) -> std::vector<std::pair<txn_id_t, txn_id_t>>;
 
   /**
    * Runs cycle detection in the background.
@@ -302,11 +303,11 @@ class LockManager {
 
   void CheckUpgradeLock(Transaction *txn, LockMode old_mode, LockMode new_mode);
 
-  auto CheckUnlock(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,  // NOLINT
-                   table_oid_t oid) -> std::list<LockRequest *>::iterator;
+  auto CheckUnlock(Transaction *txn, IsolationLevel level, LockRequestQueue &queue, table_oid_t oid)
+      -> std::list<LockRequest *>::iterator;
 
-  auto CheckUnlock(Transaction *txn, IsolationLevel level, std::shared_ptr<LockRequestQueue> queue,  // NOLINT
-                   table_oid_t oid, const RID &rid) -> std::list<LockRequest *>::iterator;
+  auto CheckUnlock(Transaction *txn, IsolationLevel level, LockRequestQueue &queue, table_oid_t oid, const RID &rid)
+      -> std::list<LockRequest *>::iterator;
 
   void RecordLock(Transaction *txn, LockMode lock_mode, const table_oid_t &oid);
 
@@ -332,6 +333,10 @@ class LockManager {
 
   void UpdateState(Transaction *txn, IsolationLevel level, LockMode lock_mode);
 
+  auto Notify(Transaction *txn) -> void;
+
+  auto BuildGraph() -> void;
+
   /** Fall 2022 */
   /** Structure that holds lock requests for a given table oid */
   std::unordered_map<table_oid_t, std::shared_ptr<LockRequestQueue>> table_lock_map_;
@@ -348,6 +353,9 @@ class LockManager {
   /** Waits-for graph representation. */
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
   std::mutex waits_for_latch_;
+
+  std::list<LockRequest> requests_;
+  std::mutex requests_latch_;
 };
 
 }  // namespace bustub
